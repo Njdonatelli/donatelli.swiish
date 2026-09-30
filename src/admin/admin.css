@@ -67,6 +67,8 @@
 *{box-sizing:border-box}
 body{margin:0;background:var(--dt-bg);color:var(--dt-text);font:400 16px/1.5 var(--sans);-webkit-font-smoothing:antialiased}
 code,.mono{font-family:var(--mono)}
+/* Env names and paths inside running text: mono at the size .mono uses, so a 14px line does not jump. */
+code{font-size:13px;overflow-wrap:anywhere}
 :focus-visible{outline:2px solid var(--dt-focus);outline-offset:2px}
 @media (prefers-reduced-motion:reduce){*{transition-duration:0ms!important;animation-duration:0ms!important}}
 

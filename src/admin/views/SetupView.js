@@ -41,7 +41,7 @@ export default function SetupView({ api }) {
 
   return (
     <AuthFrame title="Set up the admin.">
-      <p className="small muted">This creates the one owner account. The setup token is the SETUP_TOKEN value on the admin server.</p>
+      <p className="small muted">This creates the one owner account. The setup token is the <code>SETUP_TOKEN</code> value on the admin server.</p>
       <form className="stack" onSubmit={submit}>
         <PasswordField
           id="setup-token"

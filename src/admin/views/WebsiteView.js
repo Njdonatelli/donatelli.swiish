@@ -231,8 +231,8 @@ export default function WebsiteView({ api }) {
         {siteWorkflowMissing || rollbackMissing ? (
           <Callout tone="warn">
             <p>
-              {siteWorkflowMissing ? 'Redeploy is off: .github/workflows/site.yml is not on main. ' : ''}
-              {rollbackMissing ? 'Roll back is off: .github/workflows/rollback.yml is not on main. ' : ''}
+              {siteWorkflowMissing ? <>Redeploy is off: <code>.github/workflows/site.yml</code> is not on main. </> : null}
+              {rollbackMissing ? <>Roll back is off: <code>.github/workflows/rollback.yml</code> is not on main. </> : null}
               Merge the website branch that adds them, then reload this page.
             </p>
           </Callout>

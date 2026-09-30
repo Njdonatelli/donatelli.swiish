@@ -120,7 +120,7 @@ function HealthSection({ api }) {
     const soon = gh.expiresSoon || (days != null && days <= EXPIRY_WARN_DAYS);
     body = (
       <ul className="checklist">
-        <Check ok={gh.tokenSet} label="GitHub token set" detail={gh.tokenSet ? null : 'Publishing stays off until SITE_GITHUB_TOKEN is set on the admin server.'} />
+        <Check ok={gh.tokenSet} label="GitHub token set" detail={gh.tokenSet ? null : <>Publishing stays off until <code>SITE_GITHUB_TOKEN</code> is set on the admin server.</>} />
         {gh.tokenSet ? <Check ok={gh.canReadRepo} label="GitHub token can read the website repository" /> : null}
         {gh.tokenExpiresAt ? (
           <li>
@@ -128,8 +128,8 @@ function HealthSection({ api }) {
               <span>GitHub token expires {formatDate(gh.tokenExpiresAt)} ({days} {days === 1 ? 'day' : 'days'})</span>
               <small>
                 Make the replacement here:{' '}
-                <a href={TOKEN_CREATE_URL} target="_blank" rel="noopener noreferrer">new fine-grained token</a>. Set it as
-                SITE_GITHUB_TOKEN and restart.
+                <a href={TOKEN_CREATE_URL} target="_blank" rel="noopener noreferrer">new fine-grained token</a>. Set it as{' '}
+                <code>SITE_GITHUB_TOKEN</code> and restart.
               </small>
             </div>
             <Badge tone={soon ? 'warn' : 'ok'}>{soon ? 'Renew' : 'OK'}</Badge>
@@ -146,11 +146,11 @@ function HealthSection({ api }) {
             <Badge tone="warn">Off</Badge>
           </li>
         )}
-        {gh.tokenSet ? <Check ok={gh.workflowFound} label="site.yml workflow found on main" /> : null}
-        {gh.tokenSet ? <Check ok={gh.rollbackWorkflowFound} label="rollback.yml workflow found on main" /> : null}
+        {gh.tokenSet ? <Check ok={gh.workflowFound} label={<><code>site.yml</code> workflow found on main</>} /> : null}
+        {gh.tokenSet ? <Check ok={gh.rollbackWorkflowFound} label={<><code>rollback.yml</code> workflow found on main</>} /> : null}
         <Check
           ok={live.buildJsonReachable}
-          label="donatelli.tech/build.json answers"
+          label={<><code>donatelli.tech/build.json</code> answers</>}
           detail={live.liveSha ? 'Live commit ' + shortSha(live.liveSha) + '.' : null}
         />
         <Check
@@ -161,17 +161,17 @@ function HealthSection({ api }) {
               ? connect.lastReceivedAt
                 ? 'Last connection received ' + formatDateTime(connect.lastReceivedAt) + '.'
                 : 'No connection received yet.'
-              : 'CONNECT_INGEST_SECRET is not set, so card submissions are refused.'
+              : <><code>CONNECT_INGEST_SECRET</code> is not set, so card submissions are refused.</>
           }
         />
         <Check ok={h.mail && h.mail.configured} label="Email set up" detail={h.mail && h.mail.configured ? null : 'Password reset works from the server shell only.'} />
         <Check
           ok={!(h.setup && h.setup.setupTokenPresent)}
           warn={h.setup && h.setup.setupTokenPresent}
-          label={h.setup && h.setup.setupTokenPresent ? 'SETUP_TOKEN is still set' : 'SETUP_TOKEN removed'}
+          label={<><code>SETUP_TOKEN</code> {h.setup && h.setup.setupTokenPresent ? 'is still set' : 'removed'}</>}
           detail={h.setup && h.setup.setupTokenPresent ? 'Remove it from the server environment and restart.' : null}
         />
-        <Check ok={h.backups && h.backups.enabled} label="Database backups on" detail={h.backups && h.backups.enabled ? null : 'Set BACKUP_INTERVAL_HOURS on the admin server to turn them on.'} />
+        <Check ok={h.backups && h.backups.enabled} label="Database backups on" detail={h.backups && h.backups.enabled ? null : <>Set <code>BACKUP_INTERVAL_HOURS</code> on the admin server to turn them on.</>} />
       </ul>
     );
   }
