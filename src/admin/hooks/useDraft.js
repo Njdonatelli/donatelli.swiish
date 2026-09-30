@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { diffConfig, setPath, stableStringify } from '../config-path';
+import { previewMatches as matchPreview } from '../preview-match';
 
 const AUTOSAVE_MS = 3000;
 const VALIDATE_MS = 700;
@@ -111,15 +112,7 @@ export default function useDraft(api) {
     setPreviewRecord(record);
   }, []);
 
-  // Whether the preview on admin-preview is the one this draft (or a restore) produced.
-  const previewMatches = useCallback((status) => {
-    const head = status && status.preview && status.preview.headSha;
-    if (!head) return false;
-    if (previewRecord && previewRecord.commitSha === head) {
-      return previewRecord.kind === 'restore' || previewRecord.key === configKey;
-    }
-    return !previewRecord && !!(status.preview && status.preview.publishable);
-  }, [previewRecord, configKey]);
+  const previewMatches = useCallback((status) => matchPreview(previewRecord, configKey, status), [previewRecord, configKey]);
 
   const buildPreview = useCallback(async () => {
     const r = await api.post('/admin/site/preview', { config, baseSha });
