@@ -567,8 +567,11 @@ describe('website tools against the mock GitHub', () => {
     assert.ok(seen.length > 50, `checked ${seen.length} responses`);
     for (const text of seen) assert.ok(!text.includes(TOKEN), text.slice(0, 200));
     assert.ok(!srv.output().includes(TOKEN), 'server stdout/stderr');
-    const logFile = path.join(srv.dir, 'server.log');
-    if (fs.existsSync(logFile)) assert.ok(!fs.readFileSync(logFile, 'utf8').includes(TOKEN), 'server.log');
+    // log() appends to server.log without waiting.
+    await new Promise((r) => setTimeout(r, 300));
+    const serverLog = fs.readFileSync(path.join(srv.dir, 'server.log'), 'utf8');
+    assert.match(serverLog, /\[site\] published/, 'the scan covers a log that has website entries');
+    assert.ok(!serverLog.includes(TOKEN), 'server.log');
     const auditRows = await query(srv.dbFile, 'SELECT entity_data FROM audit_log');
     assert.ok(auditRows.every((r) => !String(r.entity_data).includes(TOKEN)), 'audit_log');
     for (const r of mock.state.requests) {
