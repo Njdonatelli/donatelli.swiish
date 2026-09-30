@@ -352,6 +352,8 @@ a.row:hover{color:var(--dt-text);background:var(--dt-bg-sunk)}
 .history .subject{font-size:14px;font-weight:500;overflow-wrap:anywhere}
 .history .meta{font-family:var(--mono);font-size:12px;color:var(--dt-text-muted);display:flex;flex-wrap:wrap;gap:4px 10px;align-items:center}
 .history .actions{grid-row:1/span 2;grid-column:2}
+/* A phone puts Restore under the commit line, so the sha, date and badges keep one line. */
+@media (max-width:519px){.history li{grid-template-columns:minmax(0,1fr)}.history .actions{grid-row:auto;grid-column:auto;margin-top:4px}.history .actions:empty{display:none}}
 
 /* ---------- Overview ---------- */
 .overview-grid{display:grid;gap:48px}
@@ -370,6 +372,8 @@ a.row:hover{color:var(--dt-text);background:var(--dt-bg-sunk)}
 .dialog .field input,.dialog .field textarea{border-color:var(--dt-border-strong-raised);background:var(--dt-elev-3-bg)}
 .dialog .btn-secondary{border-color:var(--dt-border-strong-raised)}
 .dialog-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;padding-top:8px}
+/* A phone has no room for both side by side: full-width buttons, the confirm on top, Cancel under it. */
+@media (max-width:479px){.dialog-actions{flex-direction:column-reverse;align-items:stretch}}
 .dialog .tablewrap{max-height:40vh;overflow:auto}
 
 /* ---------- Loading ---------- */
