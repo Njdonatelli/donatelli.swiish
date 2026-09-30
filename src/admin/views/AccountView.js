@@ -151,7 +151,7 @@ function HealthSection({ api }) {
         <Check
           ok={live.buildJsonReachable}
           label={<><code>donatelli.tech/build.json</code> answers</>}
-          detail={live.liveSha ? 'Live commit ' + shortSha(live.liveSha) + '.' : null}
+          detail={live.liveSha ? <>Live commit <code>{shortSha(live.liveSha)}</code>.</> : null}
         />
         <Check
           ok={connect.ingestSecretSet}
