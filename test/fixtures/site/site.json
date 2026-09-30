@@ -1,0 +1,43 @@
+{
+  "_meta": {
+    "rule": "Nothing invented goes live: a field that is not known stays null and the renderer leaves that block out.",
+    "schema": "data/site.schema.json"
+  },
+  "name": "donatelli.tech",
+  "alternateNames": [
+    "Donatelli Services",
+    "Donatelli"
+  ],
+  "tagline": "Remote operations & automation",
+  "bookingUrl": "https://cal.com/donatelli.tech/intro",
+  "contactEmail": "hello@donatelli.tech",
+  "owner": {
+    "name": "Nick Donatelli",
+    "givenName": "Nick",
+    "familyName": "Donatelli",
+    "jobTitle": "Operations & automation consultant",
+    "city": "San Marcos",
+    "region": "CA",
+    "regionName": "California",
+    "country": "US",
+    "photo": "/nick-donatelli-800.webp",
+    "photoSmall": "/nick-donatelli-400.webp"
+  },
+  "sameAs": [],
+  "ownerSameAs": [
+    "https://www.linkedin.com/in/nick-donatelli/",
+    "https://github.com/Njdonatelli"
+  ],
+  "year": 2026,
+  "card": {
+    "lede": null,
+    "links": [],
+    "showQr": true,
+    "connect": {
+      "enabled": false,
+      "intro": null,
+      "notice": null,
+      "retentionDays": null
+    }
+  }
+}
