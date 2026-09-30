@@ -178,6 +178,7 @@ export default function useDraft(api) {
 export function usePublishActions(api, draft, siteStatus) {
   const [busy, setBusy] = useState(null);
   const [error, setError] = useState(null);
+  const reload = draft.reload;
 
   const run = useCallback(async (kind, fn) => {
     setBusy(kind);
@@ -187,12 +188,15 @@ export function usePublishActions(api, draft, siteStatus) {
       await siteStatus.refresh({ fast: true });
       return out;
     } catch (e) {
+      // A STALE preview leaves a draft rebased onto the new main on the server. Loading it now keeps the next
+      // autosave from writing the old base and the clashing values back over it.
+      if (e.code === 'STALE') await reload();
       setError(e.code === 'INVALID' ? 'Preview not built: fix the fields marked in red, then build it again.' : e.message);
       return null;
     } finally {
       setBusy(null);
     }
-  }, [siteStatus]);
+  }, [siteStatus, reload]);
 
   const status = siteStatus.status;
   return {

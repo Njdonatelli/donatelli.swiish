@@ -541,7 +541,7 @@ async function previewAndPublish(t, { buildOn, publishOn, prevHead = null, shots
 
 // Card tab: edit the card line, watch the preview follow, then preview, publish and go live.
 async function cardEditFlow(t) {
-  const { ADMIN } = t;
+  const { ADMIN, mock } = t;
   const p1280 = t.a1280.page;
   const p375 = t.a375.page;
 
@@ -577,6 +577,48 @@ async function cardEditFlow(t) {
   await p1280.goto(ADMIN + '/admin');
   await p1280.getByText(/Last change: card line\./).waitFor({ timeout: 20000 });
   await shoot(p1280, 'overview-1280', { width: 1280 });
+
+  // A laptop commit to the same field while a draft is open: Build preview is refused as STALE, and from
+  // then on the tab shows and autosaves the draft the server rebased onto that commit.
+  await p1280.goto(ADMIN + '/admin/card');
+  await p1280.locator('#f-owner-jobTitle').waitFor();
+  await p1280.fill('#f-owner-jobTitle', 'Operations and automation lead');
+  await waitFor(async () => {
+    const d = (await api(p1280, ADMIN, '/api/admin/site')).draft;
+    return d && d.config.owner.jobTitle === 'Operations and automation lead';
+  }, { what: 'the job title draft to save' });
+  const upstream = JSON.parse(mock.fileAt('main', 'data/site.json'));
+  upstream.owner.jobTitle = 'Operations and automation consultant';
+  const laptop = mock.pushCommit({ files: { 'data/site.json': JSON.stringify(upstream, null, 2) + '\n' }, message: 'Edit the job title from the laptop' });
+  await mock.completeRun(mock.runsFor(laptop)[0].id, 'success');
+  await p1280.locator('.publishbar button', { hasText: 'Build preview' }).click();
+  await p1280.locator('.publishbar', { hasText: /in the same fields: job title\. Reload to get that change/i }).waitFor();
+  const stale = [];
+  await waitFor(async () => (await p1280.inputValue('#f-owner-jobTitle')) === upstream.owner.jobTitle, { what: 'the rebased draft in the form' }).catch((e) => stale.push(e.message));
+  // The only edit was the clashing one, so once validation catches up the rebased draft matches main.
+  await p1280.locator('.publishbar', { hasText: 'No changes.' }).waitFor().catch((e) => stale.push(e.message));
+  await p1280.evaluate(() => window.scrollTo(0, 0));
+  await shoot(p1280, 'card-stale-1280', { width: 1280, fullPage: false });
+  await p1280.fill('#f-card-lede', 'Second end-to-end test line.');
+  await waitFor(async () => {
+    const d = (await api(p1280, ADMIN, '/api/admin/site')).draft;
+    return d && d.config.card.lede === 'Second end-to-end test line.' ? d : null;
+  }, { what: 'the next autosave' }).then((d) => {
+    if (d.baseSha !== laptop) stale.push(`the autosave wrote base ${d.baseSha}, not the laptop commit ${laptop}`);
+    if (d.config.owner.jobTitle !== upstream.owner.jobTitle) stale.push(`the autosave put back job title ${JSON.stringify(d.config.owner.jobTitle)}`);
+  });
+  const previewBefore = mock.state.refs.get('admin-preview');
+  await p1280.locator('.publishbar button', { hasText: 'Build preview' }).click();
+  await waitFor(() => {
+    const head = mock.state.refs.get('admin-preview');
+    return head !== previewBefore && mock.state.commits.get(head).parents[0] === laptop;
+  }, { timeoutMs: 20000, what: 'a preview built on the laptop commit' }).catch((e) => stale.push(e.message));
+  check('stale-draft-rebased', stale);
+  const leftover = await api(p1280, ADMIN, '/api/admin/site/status');
+  if (leftover.preview && leftover.preview.run && leftover.preview.run.status !== 'completed') await mock.completeRun(leftover.preview.run.id, 'success');
+  await p1280.getByRole('button', { name: 'Discard draft' }).click();
+  await p1280.locator('dialog[open]').getByRole('button', { name: 'Discard draft' }).click();
+  await p1280.getByText('No draft.', { exact: false }).waitFor();
 }
 
 // Website tab: a site-facts edit through to live, a restore from History, Redeploy, and a dry-run rollback.
