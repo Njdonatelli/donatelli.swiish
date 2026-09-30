@@ -207,7 +207,7 @@ describe('POST /api/ingest/connections', () => {
       id: ['not-a-uuid', 42, null],
       submittedAt: [new Date(now - 25 * 3600 * 1000).toISOString(), new Date(now + 25 * 3600 * 1000).toISOString(), '2026-09-30', 'yesterday', null],
       name: ['', '   ', 'x'.repeat(121), 'Tab\there', 'Line\nbreak', 42, null],
-      email: ['no-at-sign', 'a@b.c', 'two@@example.com', `${'x'.repeat(250)}@example.com`, 'sp ace@example.com', null],
+      email: ['no-at-sign', 'visitor@example', 'two@@example.com', `${'x'.repeat(250)}@example.com`, 'sp ace@example.com', null],
       company: ['x'.repeat(121), 'Bell\u0007', 7],
       note: ['x'.repeat(1001), 'Nul\u0000', { text: 'object' }],
       source: ['email', 'QR', 5],
