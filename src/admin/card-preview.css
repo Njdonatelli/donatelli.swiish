@@ -1,0 +1,51 @@
+/* CardPreview: the live /card/ page in miniature. The site is dark by default, so the preview carries the site's
+   dark token values and card rules (website src/styles.css, "Contact card" block) whatever theme the admin uses.
+   Class names gain a cp- prefix so .btn, .field and .eyebrow here never collide with the admin's own. */
+
+.card-preview{
+  --dt-bg:#0E0D0C;--dt-bg-sunk:#080807;--dt-surface:#1A1917;
+  --dt-text:#FAF9F7;--dt-text-muted:#A8A399;--dt-text-faint:#7D7871;--dt-text-on-signal:#0E0D0C;
+  --dt-border:#2B2926;--dt-border-strong:#7D7871;
+  --dt-signal:#F97A38;--dt-signal-hover:#FF9F6B;--dt-signal-text:#FF9F6B;
+  color-scheme:dark;
+  background:var(--dt-bg);color:var(--dt-text);
+  font-family:var(--sans);font-size:16px;line-height:1.5;
+  border:1px solid var(--dt-border-strong);border-radius:6px;overflow:hidden;
+  /* The site's breakpoints follow the page width; here they follow the preview's own width. */
+  container-type:inline-size;
+}
+.cp-page{padding:32px 20px 48px;display:grid;gap:32px}
+.cp-id{display:grid;gap:8px;justify-items:start}
+.cp-photo{width:96px;height:96px;border-radius:6px;border:1px solid var(--dt-border);object-fit:cover;background:var(--dt-bg-sunk);margin-bottom:12px}
+.cp-eyebrow{font:500 12px/1.25 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--dt-text-muted);display:flex;gap:12px;flex-wrap:wrap;margin-bottom:4px}
+.cp-eyebrow b{font-weight:500;color:var(--dt-text)}
+.cp-name{font-size:36px;font-weight:700;line-height:1.1;letter-spacing:-.022em;margin:0;overflow-wrap:anywhere}
+.cp-name .dot{color:var(--dt-signal)}
+.cp-title{font-size:18px;font-weight:500;line-height:1.4;margin:0}
+.cp-loc{font-family:var(--mono);font-size:13px;color:var(--dt-text-muted);margin:0}
+.cp-lede{font-size:18px;line-height:1.5;color:var(--dt-text-muted);margin:8px 0 0}
+.cp-actions{display:grid;gap:12px}
+.cp-btn{display:flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:12px 20px;border-radius:4px;font-size:16px;font-weight:500;line-height:1.25;border:1px solid transparent;white-space:nowrap}
+.cp-btn svg{width:20px;height:20px;flex:none}
+.cp-btn--primary{background:var(--dt-signal);color:var(--dt-text-on-signal);border-color:var(--dt-signal)}
+.cp-btn--secondary{background:transparent;color:var(--dt-text);border-color:var(--dt-border-strong)}
+.cp-list{display:grid;gap:1px;background:var(--dt-border);border:1px solid var(--dt-border);border-radius:6px;overflow:hidden;margin:0}
+.cp-list div{background:var(--dt-bg);padding:12px 16px;display:grid;gap:4px}
+.cp-list dt{font:500 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--dt-text-muted)}
+.cp-list dd{margin:0;min-width:0;font-family:var(--mono);font-size:13px;color:var(--dt-text);text-decoration:underline;text-underline-offset:3px;overflow-wrap:anywhere}
+.cp-section{display:grid;gap:16px;padding-top:32px;border-top:1px solid var(--dt-border)}
+.cp-h2{font-size:30px;font-weight:600;line-height:1.25;letter-spacing:-.022em;margin:0}
+.cp-h2 .dot{color:var(--dt-signal)}
+.cp-intro{color:var(--dt-text-muted);margin:0}
+.cp-form{display:grid;gap:16px}
+.cp-field{display:grid;gap:4px;font-size:14px;font-weight:500}
+.cp-input{min-height:36px;padding:7px 10px;background:var(--dt-surface);border:1px solid var(--dt-border-strong);border-radius:4px}
+.cp-input--area{min-height:88px}
+.cp-notice{font-size:14px;color:var(--dt-text-muted);margin:0}
+.cp-notice span{color:var(--dt-text);text-decoration:underline;text-underline-offset:3px}
+.cp-qr{width:min(100%,232px);border:1px solid var(--dt-border);border-radius:6px;overflow:hidden;background:var(--dt-qr-bg)}
+.cp-qr img{display:block;width:100%;height:auto}
+.cp-muted{font-family:var(--mono);font-size:13px;color:var(--dt-text-muted);margin:0}
+.cp-offline{border-top:1px solid var(--dt-border);padding-top:8px;min-height:44px;display:flex;align-items:center;font-size:14px;font-weight:500;color:var(--dt-text-muted)}
+@container (min-width:480px){.cp-actions{grid-template-columns:1fr 1fr}.cp-actions > :first-child,.cp-actions > :nth-child(2):last-child{grid-column:1/-1}}
+@container (min-width:480px){.cp-list div{grid-template-columns:5.5rem minmax(0,1fr);align-items:baseline;gap:12px}}
