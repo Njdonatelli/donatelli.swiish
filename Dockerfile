@@ -47,6 +47,8 @@ COPY migrations/ ./migrations/
 # tools (set-password, backup-db) that must run inside this container.
 COPY lib/ ./lib/
 COPY scripts/ ./scripts/
+# A published image is a conveyed copy of the program, so the license and notices travel with it.
+COPY LICENSE COPYING NOTICE.md TRADEMARKS.md ./
 
 # Create dirs for volumes
 RUN mkdir -p data/backups uploads
