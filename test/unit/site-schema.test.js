@@ -98,6 +98,15 @@ test('x-plainText reaches strings deep in the document and inside arrays', () =>
   assert.equal(messageAt(siteWith([{ path: 'card.links', value: [{ label: 'A>B', url: 'https://example.com/' }] }]), 'card.links.0.label').length, 1);
 });
 
+test('prototype keys are unknown fields, not a way around the schema', () => {
+  const hostile = JSON.parse('{"__proto__": {"x": 1}, "constructor": "x"}');
+  const errors = validate(SCHEMA, { ...structuredClone(SITE), ...hostile });
+  assert.deepEqual(errors, [
+    { path: '__proto__', message: 'is not a known field.' },
+    { path: 'constructor', message: 'is not a known field.' },
+  ]);
+});
+
 test('lengths count characters, not UTF-16 units', () => {
   assert.deepEqual(messageAt(siteWith([{ path: 'card.lede', value: '\u{1F44B}'.repeat(160) }]), 'card.lede'), []);
 });

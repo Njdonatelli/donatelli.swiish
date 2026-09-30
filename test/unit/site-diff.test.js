@@ -83,6 +83,14 @@ test('apply copies the values it sets, so later edits to the change do not leak 
   assert.equal(out.card.links[0].label, 'Blog');
 });
 
+test('apply never writes through a prototype key', () => {
+  const hostile = JSON.parse('{"__proto__": {"polluted": true}, "owner": {"constructor": {"prototype": {"polluted": true}}}}');
+  const out = apply(SITE, diff(SITE, { ...structuredClone(SITE), ...hostile }));
+  assert.equal({}.polluted, undefined);
+  assert.equal(Object.prototype.polluted, undefined);
+  assert.equal(out.tagline, SITE.tagline);
+});
+
 test('overlaps: the same path, or one containing the other', () => {
   assert.equal(overlaps('owner.jobTitle', 'owner.jobTitle'), true);
   assert.equal(overlaps('card.connect', 'card.connect.notice'), true);
