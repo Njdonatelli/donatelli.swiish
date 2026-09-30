@@ -6,6 +6,22 @@ var MINUTE = 60 * 1000;
 var HOUR = 60 * MINUTE;
 var DAY = 24 * HOUR;
 
+// The admin server's ADMIN_TIME_ZONE once the session knows it; until then the browser's own zone.
+var defaultZone = null;
+
+function setTimeZone(timeZone) {
+  if (!timeZone) {
+    defaultZone = null;
+    return;
+  }
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: timeZone });
+    defaultZone = timeZone;
+  } catch (e) {
+    // An old browser without that zone keeps the zone it had; a wrong clock beats a view that throws.
+  }
+}
+
 // SQLite CURRENT_TIMESTAMP gives "2026-09-30 16:12:05" with no zone; it is UTC, and Date() would read it
 // as local time.
 var SQLITE_UTC = /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2}(?:\.\d+)?)$/;
@@ -22,7 +38,7 @@ function parseDate(value) {
 
 function parts(date, timeZone) {
   var opts = { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' };
-  if (timeZone) opts.timeZone = timeZone;
+  if (timeZone || defaultZone) opts.timeZone = timeZone || defaultZone;
   var out = {};
   var list = new Intl.DateTimeFormat('en-US', opts).formatToParts(date);
   for (var i = 0; i < list.length; i++) out[list[i].type] = list[i].value;
@@ -34,7 +50,7 @@ function formatTime(date, locale, timeZone) {
   var d = parseDate(date);
   if (!d) return '';
   var opts = { hour: 'numeric', minute: '2-digit' };
-  if (timeZone) opts.timeZone = timeZone;
+  if (timeZone || defaultZone) opts.timeZone = timeZone || defaultZone;
   return new Intl.DateTimeFormat(locale || 'en-US', opts).format(d).replace(/[  ]/g, ' ');
 }
 
@@ -111,6 +127,7 @@ function countCsvRecords(text) {
 }
 
 module.exports = {
+  setTimeZone: setTimeZone,
   parseDate: parseDate,
   formatTime: formatTime,
   formatDate: formatDate,

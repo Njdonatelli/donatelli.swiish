@@ -1411,7 +1411,9 @@ app.get('/api/auth/me', requireAuth, apiLimiter, (req, res, next) => {
         organisationId: user.organisation_id,
         role: user.role,
         emailVerified: user.email_verified === 1,
-        orgSlug: user.org_slug || null
+        orgSlug: user.org_slug || null,
+        // Status headlines are written in ADMIN_TIME_ZONE; the SPA uses the same zone so one screen shows one clock.
+        timeZone: config.timeZone
       });
     }
   );

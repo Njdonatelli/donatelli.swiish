@@ -146,6 +146,8 @@ describe('a production server', () => {
     assert.equal(me.status, 200);
     assert.equal(me.json.role, 'owner');
     assert.equal(me.json.orgSlug, 'donatelli-tech');
+    // The SPA formats every time in the zone the server's own status copy uses (ADMIN_TIME_ZONE's default).
+    assert.equal(me.json.timeZone, 'America/Los_Angeles');
 
     res = await clientFor(srv).setupOwner({ email: 'second@example.com', password: 'second owner password', setupToken: srv.env.SETUP_TOKEN });
     assert.equal(res.status, 403);

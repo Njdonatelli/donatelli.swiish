@@ -73,3 +73,25 @@ test('countCsvRecords counts records, not lines, and skips the header', () => {
   assert.equal(f.countCsvRecords(rows), 2);
   assert.equal(f.countCsvRecords(rows.replace(/\r\n$/, '')), 2);
 });
+
+// The server writes status copy in ADMIN_TIME_ZONE; once the SPA knows that zone, every time it formats on
+// its own agrees with it, whatever zone the browser is in.
+test('setTimeZone makes the admin zone the default, and an explicit zone still wins', (t) => {
+  t.after(() => f.setTimeZone(null));
+  f.setTimeZone('America/Los_Angeles');
+  assert.equal(f.formatTime('2026-09-30T23:12:00Z'), '4:12 PM');
+  assert.equal(f.formatDateTime('2026-10-01T02:05:00Z'), '2026-09-30 19:05');
+  assert.equal(f.formatDate('2027-09-30 03:00:00'), '2027-09-29');
+  assert.equal(f.formatTime('2026-09-30T16:12:00Z', 'en-US', 'UTC'), '4:12 PM');
+  assert.equal(f.formatDateTime('2026-09-30T16:12:00Z', 'UTC'), '2026-09-30 16:12');
+});
+
+test('setTimeZone ignores a zone the browser does not know, and null returns to the browser zone', (t) => {
+  t.after(() => f.setTimeZone(null));
+  f.setTimeZone('UTC');
+  f.setTimeZone('Not/AZone');
+  assert.equal(f.formatDateTime('2026-09-30T16:12:00Z'), '2026-09-30 16:12');
+  f.setTimeZone(null);
+  const local = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' }).format(new Date('2026-09-30T16:12:00Z')).replace(/[\u202f\u00a0]/g, ' ');
+  assert.equal(f.formatTime('2026-09-30T16:12:00Z'), local);
+});

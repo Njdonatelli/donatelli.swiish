@@ -1,4 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { setTimeZone } from './format';
 
 const SessionContext = createContext(null);
 
@@ -22,6 +23,7 @@ export function SessionProvider({ api, children }) {
     }
     try {
       const user = await api.get('/auth/me');
+      setTimeZone(user.timeZone);
       if (mounted.current) setState({ status: 'authenticated', user, setup, error: null });
       return 'authenticated';
     } catch (e) {
