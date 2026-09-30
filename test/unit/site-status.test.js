@@ -387,3 +387,55 @@ test('describePaths: titles, lower-cased, joined as a person would', () => {
   assert.equal(describePaths(['tagline', 'tagline'], TITLES), 'tagline');
   assert.equal(describePaths(['owner.jobTitle', 'contactEmail'], TITLES), 'job title and public email');
 });
+
+// The job and step names are a contract with the website's .github/workflows/site.yml, copied by hand
+// into lib/site-status.js and scripts/mock-github.js. Read the real workflow when this machine has the
+// website checkout and PyYAML (as the website's own workflow tests do), and hold both copies to it.
+const WORKFLOWS = [process.env.WEBSITE_DIR, require('path').join(__dirname, '..', '..', '..', 'donatelli-website'), '/home/user/donatelli-website']
+  .filter(Boolean)
+  .map((dir) => require('path').join(dir, '.github', 'workflows'))
+  .find((dir) => require('fs').existsSync(require('path').join(dir, 'site.yml')));
+function loadYaml(file) {
+  const out = require('child_process').spawnSync('python3', ['-c', 'import yaml,json,sys; print(json.dumps(yaml.safe_load(open(sys.argv[1]))))', file], { encoding: 'utf8' });
+  return out.status === 0 ? JSON.parse(out.stdout) : null;
+}
+const SITE_YML = WORKFLOWS ? loadYaml(require('path').join(WORKFLOWS, 'site.yml')) : null;
+
+test('sync: status steps and the mock GitHub follow the website site.yml', { skip: SITE_YML ? false : 'no website site.yml, or no python3 with PyYAML, on this machine' }, () => {
+  const { FAILED_WORDING } = require('../../lib/site-status');
+  const { SITE_JOBS, ROLLBACK_JOBS } = require('../../scripts/mock-github');
+  const real = Object.values(SITE_YML.jobs).map((j) => ({ name: j.name, steps: j.steps.map((s) => s.name) }));
+  const githubAdded = (name) => name === 'Set up job' || name === 'Complete job' || name.startsWith('Post ');
+  assert.deepEqual(SITE_JOBS.map((j) => ({ name: j.name, steps: j.steps.filter((s) => !githubAdded(s)) })), real);
+  const rollback = loadYaml(require('path').join(WORKFLOWS, 'rollback.yml'));
+  assert.deepEqual(ROLLBACK_JOBS.map((j) => ({ name: j.name, steps: j.steps.filter((s) => !githubAdded(s)) })),
+    Object.values(rollback.jobs).map((j) => ({ name: j.name, steps: j.steps.map((s) => s.name) })));
+
+  // Each step of the real workflow, in progress, lands in its spec §5.8 phase; each worded step, failing, gets its wording.
+  const [verify, deploy] = real;
+  // A step named in both jobs ("Set up Node") is placed by the job it runs in, so steps are addressed as (job, name).
+  const jobsAt = (inDeploy, current, conclusion = null) => {
+    const job = ({ name, steps }, active) => {
+      let reached = false;
+      const out = ['Set up job', ...steps, 'Complete job'].map((s, i) => {
+        const done = { name: s, number: i + 1, status: 'completed', conclusion: 'success' };
+        if (!active) return done;
+        if (s === current && !reached) { reached = true; return { name: s, number: i + 1, status: conclusion ? 'completed' : 'in_progress', conclusion }; }
+        return reached ? { name: s, number: i + 1, status: 'queued', conclusion: null } : done;
+      });
+      return { name, status: active ? (conclusion ? 'completed' : 'in_progress') : 'completed', conclusion: active ? conclusion : 'success', steps: out };
+    };
+    return inDeploy ? [job(verify, false), job(deploy, true)] : [job(verify, true)];
+  };
+  for (const s of verify.steps) {
+    assert.equal(progress(jobsAt(false, s)).step.index, verify.steps.indexOf(s) < verify.steps.indexOf('QA checks') ? 1 : 2, s);
+  }
+  for (const s of deploy.steps) {
+    assert.equal(progress(jobsAt(true, s)).step.index, deploy.steps.indexOf(s) < deploy.steps.indexOf('Verify live') ? 3 : 4, s);
+  }
+  for (const [s, wording] of Object.entries(FAILED_WORDING)) {
+    const inDeploy = deploy.steps.includes(s);
+    assert.ok(inDeploy || verify.steps.includes(s), `${s} is not a step of site.yml`);
+    assert.equal(progress(jobsAt(inDeploy, s, 'failure')).failed.wording, wording, s);
+  }
+});
