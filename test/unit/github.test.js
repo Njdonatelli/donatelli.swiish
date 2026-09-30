@@ -6,7 +6,7 @@ const {
 } = require('../../lib/github');
 const { writeTree, assertAllowedPath, ALLOWED_PATHS, PathNotAllowedError } = require('../../lib/site-admin');
 
-const TOKEN = 'github_pat_unitTEST0123456789abcdefghijklmnopqrstuvwxyz';
+const TOKEN = 'test-token-unit-0123456789abcdefghijklmnopqrstuvwxyz';
 const REPO = 'Njdonatelli/donatelli-website';
 const API = 'https://api.github.example.com';
 const SHA = 'a'.repeat(40);

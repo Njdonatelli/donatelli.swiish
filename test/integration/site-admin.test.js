@@ -143,7 +143,8 @@ describe('website tools without SITE_GITHUB_TOKEN', () => {
 });
 
 describe('website tools against the mock GitHub', () => {
-  const TOKEN = 'github_pat_' + crypto.randomBytes(30).toString('hex');
+  // Random per run and long enough that a chance match in a response is impossible.
+  const TOKEN = 'test-token-' + crypto.randomBytes(30).toString('hex');
   const EXPIRES = new Date(Date.now() + 10 * 24 * 3600 * 1000);
   let mock;
   let srv;
