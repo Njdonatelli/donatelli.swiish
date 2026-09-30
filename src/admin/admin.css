@@ -261,6 +261,9 @@ a.wm:hover{color:var(--dt-text)}
 .section-tight{margin-top:24px}
 .section-tight:empty{display:none}
 .narrow,.narrow-form{max-width:420px}
+.measure{max-width:640px}
+/* A table column as wide as its content, so a short value does not get half the table. */
+th.fit{width:1%}
 .search-field{max-width:420px}
 /* Room under the last section so the fixed publish bar never covers it. */
 .bar-space{height:96px}
@@ -292,14 +295,14 @@ a.wm:hover{color:var(--dt-text)}
 .rows{border-top:1px solid var(--dt-border)}
 .row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 12px;align-items:center;padding:12px 0;border-bottom:1px solid var(--dt-border);text-decoration:none;color:var(--dt-text)}
 a.row:hover{color:var(--dt-text);background:var(--dt-bg-sunk)}
-.row-title{font-weight:600;font-size:15px;overflow-wrap:anywhere}
+.row-title{font-weight:600;font-size:16px;overflow-wrap:anywhere}
 .row-meta{font-family:var(--mono);font-size:12px;color:var(--dt-text-muted);grid-column:1;overflow-wrap:anywhere}
 .row .badge{grid-row:1/span 2;grid-column:2}
 @media (pointer:coarse){a.row{min-height:56px}}
 .dl{display:grid;gap:1px;background:var(--dt-border);border:1px solid var(--dt-border);border-radius:6px;overflow:hidden}
 .dl>div{background:var(--dt-surface);padding:12px 16px;display:grid;gap:4px}
 .dl dt{font:500 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--dt-text-muted)}
-.dl dd{font-size:15px;overflow-wrap:anywhere;white-space:pre-wrap}
+.dl dd{font-size:16px;overflow-wrap:anywhere;white-space:pre-wrap}
 .dl dd a{color:var(--dt-text)}
 @media (min-width:640px){.dl>div{grid-template-columns:9rem minmax(0,1fr);align-items:baseline;gap:16px}}
 .dl details summary{cursor:pointer;color:var(--dt-text-muted);font-size:14px;min-height:32px;display:flex;align-items:center}
@@ -352,7 +355,10 @@ a.row:hover{color:var(--dt-text);background:var(--dt-bg-sunk)}
 
 /* ---------- Overview ---------- */
 .overview-grid{display:grid;gap:48px}
-@media (min-width:1024px){.overview-grid{grid-template-columns:minmax(0,1fr) minmax(0,320px);gap:64px;align-items:start}.overview-grid>.section{margin-top:0}}
+/* The grid and column gaps are the section rhythm here; a section's own margin on top would double it. */
+.overview-grid .section{margin-top:0}
+.overview-grid>.stack-lg{gap:48px}
+@media (min-width:1024px){.overview-grid{grid-template-columns:minmax(0,1fr) minmax(0,320px);gap:64px;align-items:start}.overview-grid>.stack-lg{gap:64px}}
 .qr-frame{width:176px;background:var(--dt-qr-bg);border:1px solid var(--dt-border);border-radius:6px;padding:8px}
 .qr-frame img{width:100%;height:auto}
 

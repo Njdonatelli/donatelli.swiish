@@ -159,7 +159,7 @@ export default function ConnectionDetail({ api, id: idProp }) {
           className="narrow"
         />
         <p className="status-msg" role="status" data-tone={statusMsg.indexOf('not saved') !== -1 ? 'bad' : 'ok'}>{statusMsg}</p>
-        <form className="stack" onSubmit={saveNotes}>
+        <form className="stack measure" onSubmit={saveNotes}>
           <TextAreaField
             id="conn-notes"
             label="Notes"

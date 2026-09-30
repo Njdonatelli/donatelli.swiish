@@ -37,7 +37,7 @@ export default function ActivityList({ api }) {
         <table>
           <thead>
             <tr>
-              <th scope="col">When</th>
+              <th scope="col" className="fit">When</th>
               <th scope="col">What</th>
             </tr>
           </thead>
