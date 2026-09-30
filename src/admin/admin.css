@@ -276,6 +276,7 @@ th.fit{width:1%}
 .publishbar-inner{max-width:1200px;margin-inline:auto;padding:12px 20px;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 16px}
 .publishbar-label{font-size:14px;font-weight:500;min-width:0;flex:1 1 200px}
 .publishbar-label small{display:block;font-weight:400;font-size:13px;color:var(--dt-text-muted)}
+.publishbar-label small.field-error{color:var(--dt-danger)}
 .publishbar-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}
 @media (min-width:1024px){.publishbar{left:232px;bottom:0}.publishbar-inner{padding:12px 40px}}
 
