@@ -662,7 +662,7 @@ async function websiteFlow(t) {
   await rb.getByLabel('Type ROLL BACK to confirm.').fill('ROLL BACK');
   await shoot(p375, 'website-rollback-dialog-375', { width: 375, fullPage: false });
   known = knownRuns();
-  await rb.getByRole('button', { name: 'Roll back production' }).click();
+  await rb.getByRole('button', { name: 'Request the rollback plan' }).click();
   await p375.getByText(/Rollback plan requested at \d{1,2}:\d{2} [AP]M\. The run summary lists the target; nothing changed\./).waitFor();
   const rollback = mock.state.runs.find((r) => !known.has(r.id) && r.event === 'workflow_dispatch');
   const rbProblems = [];

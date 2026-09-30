@@ -327,7 +327,7 @@ export default function WebsiteView({ api }) {
           </>
         }
         typedConfirm="ROLL BACK"
-        confirmLabel="Roll back production"
+        confirmLabel={rollback.dryRun ? 'Request the rollback plan' : 'Roll back production'}
         tone="danger"
         busy={rollback.busy}
         error={rollback.error}
