@@ -4051,26 +4051,8 @@ const deps = {
   config, emailTransporter, escapeXml, fetch: globalThis.fetch, now: () => new Date(),
 };
 
-// lib/connections.js and lib/site-admin.js land from separate work branches. Until both are
-// merged the server boots without whichever file is absent; a file that exists but fails to
-// load (a missing dependency of its own included) still stops the boot.
-function requireIfPresent(id) {
-  try {
-    require.resolve(id);
-  } catch (err) {
-    if (err.code === 'MODULE_NOT_FOUND') {
-      console.warn(`[edition] ${id} is not in this build; its routes are off.`);
-      return null;
-    }
-    throw err;
-  }
-  return require(id);
-}
-
-const connectionsModule = requireIfPresent('./lib/connections');
-const connections = connectionsModule ? connectionsModule.register(app, deps) : null;
-const siteAdminModule = requireIfPresent('./lib/site-admin');
-if (siteAdminModule) siteAdminModule.register(app, deps);
+const connections = require('./lib/connections').register(app, deps);
+require('./lib/site-admin').register(app, deps);
 
 // Error handling middleware (must be last)
 app.use(errorHandler);
@@ -4714,7 +4696,7 @@ function startBackupTimer() {
   try {
     await runMigrations();
 
-    if (connections) connections.startTimers();
+    connections.startTimers();
     const backupTimer = startBackupTimer();
 
     const server = app.listen(PORT, () => {
@@ -4730,7 +4712,7 @@ function startBackupTimer() {
     function gracefulShutdown(signal) {
       console.log(`\n${signal} received. Closing database connection and shutting down gracefully...`);
 
-      if (connections) connections.stopTimers();
+      connections.stopTimers();
       if (backupTimer) clearInterval(backupTimer);
 
       // Close database connection

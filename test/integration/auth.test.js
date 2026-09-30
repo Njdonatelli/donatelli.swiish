@@ -9,8 +9,6 @@ const { startServer, runUntilExit } = require('../helpers/server-harness');
 const { createClient } = require('../helpers/cookie-jar');
 const { BLOCKED_PREFIXES } = require('../../lib/edition');
 
-const ROOT = path.join(__dirname, '..', '..');
-const HAS_CONNECTIONS = fs.existsSync(path.join(ROOT, 'lib', 'connections.js'));
 const OWNER = 'owner@example.com';
 const MEMBER = 'member@example.com';
 
@@ -188,23 +186,29 @@ describe('a production server', () => {
     assert.deepEqual(res.json, { error: 'Request too large.', code: 'TOO_LARGE' });
   });
 
-  test('20 KB ingest body → 413 (the ingest route caps at 16 KB)', { skip: !HAS_CONNECTIONS && 'lib/connections.js is not on this branch' }, async () => {
+  test('20 KB ingest body → 413 (the ingest route caps at 16 KB)', async () => {
     const res = await owner.request('POST', '/api/ingest/connections', {
       body: JSON.stringify({ v: 1, pad: 'x'.repeat(20 * 1024) }),
       headers: { 'Content-Type': 'application/json' },
       csrf: false,
     });
     assert.equal(res.status, 413);
+    assert.equal(res.json.ok, false);
+    assert.equal(res.json.code, 'TOO_LARGE');
   });
 
-  test('the 10 MB global parsers leave /api/ingest/ bodies alone', { skip: HAS_CONNECTIONS && 'covered by the 16 KB ingest test once lib/connections.js exists' }, async () => {
-    // With no ingest route yet, an 11 MB body reaches the 404 instead of the global 413.
+  test('the 10 MB global parsers leave /api/ingest/ bodies alone', async () => {
+    // Only the ingest route's own 16 KB reader answers with {ok:false}; the global errorHandler's
+    // 413 has no ok field, so this shape proves the global parser never read the body.
     const res = await owner.request('POST', '/api/ingest/connections', {
       body: JSON.stringify({ pad: 'x'.repeat(11 * 1024 * 1024) }),
       headers: { 'Content-Type': 'application/json' },
       csrf: false,
     });
-    assert.equal(res.status, 404);
+    assert.equal(res.status, 413);
+    assert.equal(res.json.ok, false);
+    assert.equal(res.json.code, 'TOO_LARGE');
+    assert.notEqual(res.json.error, 'Request too large.');
   });
 
   test('sign out everywhere: every earlier session gets 401', async () => {
