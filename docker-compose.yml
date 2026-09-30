@@ -1,20 +1,21 @@
 services:
   swiish:
-    image: ghcr.io/mrcrin/swiish:latest
+    build: .
     container_name: swiish
     restart: unless-stopped
-    ports:
-      - "8095:3000"
+    # Every other setting comes from .env (copy .env.example; secrets never go in this file).
+    env_file: .env
     environment:
-      # WARNING: JWT_SECRET must be set in your .env file or environment
-      # Never use default values in production!
-      - JWT_SECRET=${JWT_SECRET}
-      - APP_URL=${APP_URL:-http://localhost:8095}
-      - NODE_ENV=${NODE_ENV:-production}
+      # Pinned here so a .env copied from development cannot switch off the production checks
+      - NODE_ENV=production
       - PORT=3000
-      - JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-24h}
-      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:8095}
-      - MAX_FILE_SIZE=${MAX_FILE_SIZE:-5242880}
+    ports:
+      # Loopback only: the TLS reverse proxy (or tunnel) on this host is the public entry.
+      - "127.0.0.1:8095:3000"
     volumes:
       - ./data:/app/data
-      - ./uploads:/app/uploads
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
