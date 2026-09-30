@@ -205,3 +205,22 @@ test('sync: the fixtures match the website checkout', { skip: WEBSITE ? false : 
     assert.equal(read(mine), fs.readFileSync(other, 'utf8'), `test/fixtures/site/${mine} differs from ${other}; copy it over.`);
   }
 });
+
+// The byte-identical cases file only helps if both engines read it the same way, so the website's own
+// engine runs here too, on every shared case and on documents the 21 cases do not reach.
+test('sync: the website engine gives the same errors, in the same order, as this one', { skip: WEBSITE && fs.existsSync(path.join(WEBSITE, 'tools', 'site-schema.mjs')) ? false : 'no donatelli-website engine on this machine' }, async () => {
+  const web = await import(path.join(WEBSITE, 'tools', 'site-schema.mjs'));
+  const webErrorsOf = (s) => [...web.validate(SCHEMA, s), ...web.crossFieldErrors(s)];
+  const docs = CASES.map((c) => [c.name, siteWith(c.set)]);
+  const siteText = JSON.stringify(SITE);
+  docs.push(
+    ['prototype keys at the root', { ...structuredClone(SITE), ...JSON.parse('{"__proto__": {"x": 1}, "constructor": "x", "toString": "x"}') }],
+    ['a prototype key in a nested object', JSON.parse(siteText.replace('"connect":{', '"connect":{"hasOwnProperty":"x",'))],
+    ['wrong types', siteWith([{ path: 'year', value: 2026.5 }, { path: 'card.showQr', value: 'yes' }, { path: 'card.connect.retentionDays', value: '365' }])],
+    ['lengths in characters', siteWith([{ path: 'owner.givenName', value: '\u{1F44B}'.repeat(41) }, { path: 'tagline', value: 'a' }])],
+    ['plain text everywhere', siteWith([{ path: '_meta.rule', value: 'a <b>' }, { path: 'alternateNames', value: ['A&B'] }, { path: 'card.links', value: [{ label: 'x`', url: 'https://example.com/' }] }])],
+    ['the form on without its notice', siteWith([{ path: 'card.connect.enabled', value: true }, { path: 'card.connect.retentionDays', value: 10 }])],
+    ['not an object', null],
+  );
+  for (const [name, doc] of docs) assert.deepEqual(webErrorsOf(doc), errorsOf(doc), name);
+});
