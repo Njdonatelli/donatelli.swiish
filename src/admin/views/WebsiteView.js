@@ -91,6 +91,7 @@ export default function WebsiteView({ api }) {
   const [historyError, setHistoryError] = useState(null);
   const [restoring, setRestoring] = useState(null);
   const [restored, setRestored] = useState(null);
+  const [restorePlan, setRestorePlan] = useState(null);
   const [rollback, setRollback] = useState({ open: false, dryRun: false, busy: false, error: null });
   const [recovery, setRecovery] = useState({ tone: 'ok', text: '', url: null });
   const [rolledBack, setRolledBack] = useState(false);
@@ -111,6 +112,21 @@ export default function WebsiteView({ api }) {
   useEffect(() => {
     api.get('/admin/health').then(setHealth).catch(() => setHealth(null));
   }, [api]);
+
+  // The confirm shows the fields a restore would change before anything is committed.
+  useEffect(() => {
+    if (!restoring) return undefined;
+    let live = true;
+    const sha = restoring.sha;
+    setRestorePlan({ sha, changes: null, error: null });
+    api
+      .get('/admin/site/history/' + encodeURIComponent(sha) + '/changes')
+      .then((r) => live && setRestorePlan({ sha, changes: r.changes || [], error: null }))
+      .catch((e) => live && setRestorePlan({ sha, changes: null, error: 'Changes not loaded: ' + e.message }));
+    return () => {
+      live = false;
+    };
+  }, [api, restoring]);
 
   useEffect(() => {
     if (ready) loadHistory();
@@ -156,6 +172,7 @@ export default function WebsiteView({ api }) {
   };
 
   const showRolledBack = rolledBack || (status && status.state === 'rolled_back');
+  const plan = restoring && restorePlan && restorePlan.sha === restoring.sha ? restorePlan : null;
 
   return (
     <>
@@ -266,13 +283,27 @@ export default function WebsiteView({ api }) {
         title="Restore this version?"
         body={
           restoring ? (
-            <p>
-              Builds a new preview of donatelli.tech as it was at {shortSha(restoring.sha)} ("{restoring.subject}",{' '}
-              {formatDateTime(restoring.date)}). Read-only fields keep today's values. The fields it changes appear here
-              before you publish.
-            </p>
+            <>
+              <p>
+                Builds a new preview of donatelli.tech as it was at {shortSha(restoring.sha)} ("{restoring.subject}",{' '}
+                {formatDateTime(restoring.date)}). Read-only fields keep today's values. Nothing goes live until you publish
+                that preview.
+              </p>
+              {!plan || (!plan.changes && !plan.error) ? (
+                <p className="muted small" role="status">Reading the fields this version changes.</p>
+              ) : plan.changes && plan.changes.length === 0 ? (
+                <p>Nothing to restore: that version matches donatelli.tech.</p>
+              ) : plan.changes ? (
+                <>
+                  <p>It changes these fields against main:</p>
+                  <ChangesTable changes={plan.changes} fields={allFields(site.schema, site.fields)} draftLabel="Restored" />
+                </>
+              ) : null}
+            </>
           ) : null
         }
+        error={plan && plan.error}
+        confirmDisabled={!plan || !plan.changes || plan.changes.length === 0}
         confirmLabel="Build preview of this version"
         onClose={() => setRestoring(null)}
         onConfirm={doRestore}
