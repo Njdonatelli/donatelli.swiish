@@ -273,6 +273,8 @@ function inspect() {
 // Full-page shots grow the viewport to the page height instead of stitching, so fixed and sticky bars sit
 // where they sit at the end of a scroll, not over the middle of the page.
 async function shoot(page, name, { width, fullPage = true, jsOff = false } = {}) {
+  // The pointer stays where the last click left it; parked in the corner, no button is caught mid-hover.
+  await page.mouse.move(0, 0);
   await page.waitForTimeout(400);
   const problems = [];
   if (!jsOff) {
@@ -557,7 +559,8 @@ async function cardEditFlow(t) {
   await p1280.getByText(/Draft saved \d{1,2}:\d{2} [AP]M\./).waitFor({ timeout: 15000 });
   await p1280.locator('.card-preview', { hasText: line }).waitFor();
   await p1280.locator('.publishbar', { hasText: '1 change.' }).waitFor();
-  await p1280.locator('#f-card-lede').scrollIntoViewIfNeeded();
+  // From the top the sticky preview shows the edited line; next to the field it has scrolled past it.
+  await p1280.evaluate(() => window.scrollTo(0, 0));
   await shoot(p1280, 'card-editor-changed-1280', { width: 1280, fullPage: false });
 
   const out = await previewAndPublish(t, {
