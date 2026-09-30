@@ -3,52 +3,17 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#020617" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https://api.github.com; img-src 'self' data: https:; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; font-src 'self' data:;" />
-    <link rel="manifest" id="pwa-manifest" href="%PUBLIC_URL%/manifest.json" />
-    <link rel="apple-touch-icon" sizes="180x180" href="%PUBLIC_URL%/icons/icon-192.png" />
-    <script>
-      // Update manifest link immediately based on URL slug (before React loads)
-      (function() {
-        const path = window.location.pathname || '';
-        const slug = path.replace(/^\//, '').split('/')[0]; // Get first path segment
-        if (slug && slug !== 'admin' && slug !== '') {
-          const manifestLink = document.getElementById('pwa-manifest') || document.querySelector('link[rel="manifest"]');
-          if (manifestLink) {
-            const newHref = '/manifest/' + slug + '.json';
-            manifestLink.setAttribute('href', newHref);
-          }
-        }
-      })();
-    </script>
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <title>Swiish</title>
-    <!-- Inline theme pre-load to avoid flash of incorrect theme -->
-    <script>
-      (function() {
-        const stored = localStorage.getItem('darkMode');
-        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-        const shouldBeDark = stored === 'true' || (stored === null && prefersDark);
-        if (shouldBeDark) {
-          document.documentElement.classList.add('dark');
-        } else {
-          document.documentElement.classList.remove('dark');
-        }
-      })();
-    </script>
-    <style>
-      /* Hide scrollbar for Chrome, Safari and Opera */
-      .scrollbar-hide::-webkit-scrollbar { display: none; }
-      /* Hide scrollbar for IE, Edge and Firefox */
-      .scrollbar-hide { -ms-overflow-style: none;  scrollbar-width: none; }
-      /* Animation Utilities */
-      .animate-in { animation: animate-in 0.5s ease-out forwards; }
-      @keyframes animate-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-    </style>
+    <meta name="robots" content="noindex, nofollow" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#FAF9F7" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0E0D0C" />
+    <link rel="icon" href="%PUBLIC_URL%/brand/favicon.ico" sizes="16x16 32x32 48x48" />
+    <link rel="icon" href="%PUBLIC_URL%/brand/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="%PUBLIC_URL%/brand/apple-touch-icon.png" />
+    <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
+    <title>donatelli.tech admin</title>
   </head>
   <body>
-    <noscript>You need to enable JavaScript to run this app.</noscript>
+    <noscript>The donatelli.tech admin needs JavaScript. Turn it on for this site and reload.</noscript>
     <div id="root"></div>
   </body>
 </html>
