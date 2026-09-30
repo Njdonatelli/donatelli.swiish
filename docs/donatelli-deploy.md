@@ -104,8 +104,9 @@ repository is cloned.
    again.
 
 7. Point the TLS proxy at `http://127.0.0.1:8095`, then open `https://<your admin host>/setup`.
-   Enter the `SETUP_TOKEN` value from `.env`, the organisation name `donatelli.tech` (its slug `donatelli-tech` is what the card relay
-   expects), your own email, and a password of at least 12 characters. To print the token:
+   Enter the `SETUP_TOKEN` value from `.env`, the organisation name `donatelli.tech` (its slug
+   `donatelli-tech` is what the card relay expects), your own email, and a password of at least
+   12 characters. To print the token:
 
    ```bash
    grep '^SETUP_TOKEN=' .env
@@ -278,8 +279,9 @@ docker compose logs --tail 50 swiish
 ```
 
 - `Server not started: N configuration problems.` lists each variable to fix in `.env`.
-- `Migration failed:` means the database could not be migrated; restore the newest backup
-  (above) and start again.
+- `Migration failed:` means the database could not be migrated; the lines above it name the
+  migration and the SQLite error. If the database file itself is damaged, restore the newest
+  backup (above) and start again.
 
 ## Logs
 
