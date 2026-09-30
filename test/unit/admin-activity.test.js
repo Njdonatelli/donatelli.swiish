@@ -20,6 +20,7 @@ test('a notes-only update reads as notes, not as a status change', () => {
 
 test('counts and commits are shown when the row carries them', () => {
   assert.equal(say('connections_erased', { count: 2 }), 'Erased by email (2 records).');
+  assert.equal(say('connections_erased', { count: 1 }), 'Erased by email (1 record).');
   assert.equal(say('connections_exported', { count: 12, status: 'all' }), 'Connections exported (12).');
   assert.equal(say('site_published', { ref: null, commit: '3f2a1c9d0e8b7a6f5e4d3c2b1a0f9e8d7c6b5a49' }), 'Published to donatelli.tech (3f2a1c9).');
   assert.equal(say('site_rollback_requested', { dryRun: true, deploymentId: null }), 'Rollback plan requested.');

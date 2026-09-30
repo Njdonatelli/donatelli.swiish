@@ -2,11 +2,13 @@
 // CommonJS so node:test can require it without Babel. Kept to syntax that Babel compiles without
 // runtime helpers: a helper import would turn this file into an ES module and break module.exports.
 
-var shortSha = require('./format').shortSha;
+var format = require('./format');
+var shortSha = format.shortSha;
 
 // Audit rows carry no personal data (spec §4.7), so the sentences here never name a visitor.
-function counted(label, d, noun) {
-  return label + (d && d.count != null ? ' (' + d.count + (noun ? ' ' + noun : '') + ')' : '') + '.';
+function counted(label, d, one, many) {
+  if (!d || d.count == null) return label + '.';
+  return label + ' (' + (one ? format.pluralize(d.count, one, many) : d.count) + ').';
 }
 
 function withCommit(label, d) {
@@ -32,7 +34,7 @@ var SENTENCES = {
   connection_deleted: function () { return 'Connection deleted.'; },
   connection_vcard_exported: function () { return 'Connection saved as a contact.'; },
   connections_exported: function (d) { return counted('Connections exported', d); },
-  connections_erased: function (d) { return counted('Erased by email', d, 'records'); },
+  connections_erased: function (d) { return counted('Erased by email', d, 'record', 'records'); },
   connections_purged: function (d) { return counted('Expired connections deleted', d); },
   setup_completed: function () { return 'Admin set up.'; },
   sessions_revoked: function () { return 'Signed out everywhere.'; },
