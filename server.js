@@ -3998,7 +3998,11 @@ app.get('/api/admin/audit', requireAuth, requireRole('owner'), adminReadLimiter,
   singleQuery('limit', 'limit must be a whole number from 1 to 100.')
     .isInt({ min: 1, max: 100 }).withMessage('limit must be a whole number from 1 to 100.'),
   singleQuery('before', 'before must be an ISO 8601 time.')
-    .isISO8601().withMessage('before must be an ISO 8601 time.')
+    .isISO8601().withMessage('before must be an ISO 8601 time.'),
+  singleQuery('before_id', 'before_id must be the id of the last row shown, sent with its before time.')
+    .isUUID().withMessage('before_id must be the id of the last row shown, sent with its before time.')
+    .custom((value, { req }) => typeof req.query.before === 'string')
+    .withMessage('before_id must be the id of the last row shown, sent with its before time.')
 ], handleValidationErrors, async (req, res, next) => {
   res.set('Cache-Control', 'no-store');
   if (!req.user.organisationId) {
@@ -4012,7 +4016,12 @@ app.get('/api/admin/audit', requireAuth, requireRole('owner'), adminReadLimiter,
     let sql = `SELECT id, event_type, entity_type, entity_id, entity_data, performed_at FROM audit_log
       WHERE (organisation_id = ? OR organisation_id IS NULL)
         AND entity_type IN (${types.map(() => '?').join(', ')})`;
-    if (req.query.before) {
+    if (req.query.before && req.query.before_id) {
+      // performed_at has one-second precision, so rows written in the cursor row's second are
+      // told apart by rowid, the same tiebreak the ORDER BY uses; the time alone would skip them.
+      sql += ' AND (performed_at < datetime(?) OR (performed_at = datetime(?) AND rowid < (SELECT rowid FROM audit_log WHERE id = ?)))';
+      params.push(req.query.before, req.query.before, req.query.before_id);
+    } else if (req.query.before) {
       sql += ' AND performed_at < datetime(?)';
       params.push(req.query.before);
     }

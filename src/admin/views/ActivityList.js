@@ -38,12 +38,13 @@ export default function ActivityList({ api }) {
   const [more, setMore] = useState(true);
   const [busy, setBusy] = useState(false);
 
-  const load = useCallback(async (before) => {
+  // Pages by the last row's time and id: several rows can share one second, and the time alone would skip them.
+  const load = useCallback(async (last) => {
     setBusy(true);
     try {
-      const r = await api.get('/admin/audit?limit=20' + (before ? '&before=' + encodeURIComponent(before) : ''));
+      const r = await api.get('/admin/audit?limit=20' + (last ? '&before=' + encodeURIComponent(last.performedAt) + '&before_id=' + encodeURIComponent(last.id) : ''));
       const next = r.items || [];
-      setItems((prev) => (before && prev ? [...prev, ...next] : next));
+      setItems((prev) => (last && prev ? [...prev, ...next] : next));
       setMore(next.length === 20);
       setError(null);
     } catch (e) {
@@ -81,7 +82,7 @@ export default function ActivityList({ api }) {
       </div>
       {more ? (
         <div>
-          <Button variant="secondary" busy={busy} onClick={() => load(items[items.length - 1].performedAt)}>Show older</Button>
+          <Button variant="secondary" busy={busy} onClick={() => load(items[items.length - 1])}>Show older</Button>
         </div>
       ) : null}
     </>

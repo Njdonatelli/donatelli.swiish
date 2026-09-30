@@ -367,6 +367,39 @@ describe('a production server', () => {
     }
   });
 
+  test('audit paging by time and id returns rows that share one second exactly once', async () => {
+    const [{ organisation_id: org }] = await query(srv.dbFile, 'SELECT organisation_id FROM users WHERE email = ?', [OWNER]);
+    const burst = Array.from({ length: 25 }, () => require('crypto').randomUUID());
+    await new Promise((resolve, reject) => {
+      const db = new sqlite3.Database(srv.dbFile);
+      db.serialize(() => {
+        const insert = db.prepare(`INSERT INTO audit_log (id, event_type, entity_type, entity_id, entity_data, performed_by, organisation_id, performed_at)
+          VALUES (?, 'password_changed', 'auth', ?, '{}', NULL, ?, '2001-01-01 00:00:00')`);
+        for (const id of burst) insert.run(id, id, org);
+        insert.finalize((err) => db.close(() => (err ? reject(err) : resolve())));
+      });
+    });
+
+    const seen = [];
+    let path = '/api/admin/audit?entity_type=auth&limit=10&before=2001-01-01T00:00:01Z';
+    for (let page = 0; page < 5; page++) {
+      const res = await owner.get(path);
+      assert.equal(res.status, 200, JSON.stringify(res.json));
+      seen.push(...res.json.items.map((i) => i.id));
+      if (res.json.items.length < 10) break;
+      const last = res.json.items[res.json.items.length - 1];
+      path = `/api/admin/audit?entity_type=auth&limit=10&before=${encodeURIComponent(last.performedAt)}&before_id=${last.id}`;
+    }
+    assert.equal(new Set(seen).size, seen.length, 'no row twice');
+    assert.deepEqual([...seen].sort(), [...burst].sort());
+
+    for (const bad of [`before_id=${burst[0]}`, 'before=2001-01-01T00:00:01Z&before_id=not-an-id']) {
+      const refused = await owner.get(`/api/admin/audit?${bad}`);
+      assert.equal(refused.status, 400, bad);
+      assert.match(refused.json.error, /^before_id must be/, bad);
+    }
+  });
+
   test('scripts/set-password.js resets from the shell and signs out every session', async () => {
     const script = path.join('scripts', 'set-password.js');
 
