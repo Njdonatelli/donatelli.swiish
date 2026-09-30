@@ -14,12 +14,13 @@ README-SECURITY.md
 COLOR_REFERENCE.md
 *.log
 server.log
-data/*.db
-data/*.db-journal
-data/*.db-wal
-data/*.db-shm
-uploads/*
-!uploads/.gitkeep
+# Runtime data never enters the build context: the database, its backups and uploads hold
+# visitor and account data.
+data/
+uploads/
+test/
+docs/
+.github/
 .cursor
 .vscode
 .idea
