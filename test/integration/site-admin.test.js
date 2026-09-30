@@ -93,6 +93,7 @@ describe('website tools without SITE_GITHUB_TOKEN', () => {
       ['get', '/api/admin/site/status'],
       ['get', '/api/admin/site/runs?branch=main'],
       ['get', '/api/admin/site/history'],
+      ['get', `/api/admin/site/history/${sha}/changes`],
       ['post', '/api/admin/site/runs/1/rerun', {}],
       ['post', '/api/admin/site/runs/1/cancel', {}],
       ['post', '/api/admin/site/redeploy', {}],
@@ -135,7 +136,7 @@ describe('website tools without SITE_GITHUB_TOKEN', () => {
       assert.equal((await anon.get(url)).status, 401, url);
     }
     const member = await memberOf(srv, owner);
-    for (const url of ['/api/admin/site', '/api/admin/site/status', '/api/admin/site/history', '/api/admin/health', '/api/admin/card/qr.svg']) {
+    for (const url of ['/api/admin/site', '/api/admin/site/status', '/api/admin/site/history', `/api/admin/site/history/${'a'.repeat(40)}/changes`, '/api/admin/health', '/api/admin/card/qr.svg']) {
       assert.equal((await member.get(url)).status, 403, url);
     }
     assert.equal((await member.post('/api/admin/site/redeploy', {})).status, 403);
@@ -438,9 +439,17 @@ describe('website tools against the mock GitHub', () => {
   });
 
   test('revert builds a new preview that restores an old version (read-only fields excepted)', async () => {
+    // The confirm dialog reads the changes first; the revert must then commit exactly those.
+    const before = await owner.get(`/api/admin/site/history/${seedSha}/changes`);
+    assert.equal(before.status, 200, before.text);
+    assert.equal(before.json.mainSha, movedMain);
+    assert.ok(before.json.changes.length > 0);
+    assert.equal(mainSha(), movedMain, 'reading the changes moved nothing');
+
     const res = await owner.post('/api/admin/site/revert', { sha: seedSha });
     assert.equal(res.status, 202, res.text);
     assert.equal(res.json.parentSha, movedMain);
+    assert.deepEqual(res.json.changes, before.json.changes);
     assert.equal(mock.fileAt(res.json.commitSha, 'data/site.json'), SITE_TEXT);
     const creds = JSON.parse(mock.fileAt(res.json.commitSha, 'outputs/data/credentials.json'));
     assert.equal(creds.entries.contact_email.value, 'hello@donatelli.tech');
@@ -452,6 +461,10 @@ describe('website tools against the mock GitHub', () => {
     const missing = await owner.post('/api/admin/site/revert', { sha: 'd'.repeat(40) });
     assert.equal(missing.status, 404);
     assert.equal(missing.json.code, 'NOT_FOUND');
+    const missingChanges = await owner.get(`/api/admin/site/history/${'d'.repeat(40)}/changes`);
+    assert.equal(missingChanges.status, 404);
+    assert.equal(missingChanges.json.code, 'NOT_FOUND');
+    assert.equal((await owner.get('/api/admin/site/history/main/changes')).status, 400);
   });
 
   test('runs list per branch; cancel a queued run once', async () => {
