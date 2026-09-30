@@ -4,26 +4,36 @@ const assert = require('node:assert/strict');
 const { previewMatches } = require('../../src/admin/preview-match');
 
 const status = (headSha, publishable) => ({ preview: { headSha, publishable } });
+const match = (opts) => previewMatches({ record: null, configKey: 'k', draft: null, hasChanges: true, ...opts });
 
 test('no preview on admin-preview matches nothing', () => {
-  assert.equal(previewMatches({ commitSha: 'a1', kind: 'draft', key: 'k' }, 'k', status(null, false)), false);
-  assert.equal(previewMatches(null, 'k', null), false);
+  assert.equal(match({ record: { commitSha: 'a1', kind: 'draft', key: 'k' }, status: status(null, false) }), false);
+  assert.equal(match({ status: null, hasChanges: false }), false);
 });
 
 test("this browser's own preview matches while the draft is unchanged since it was built", () => {
-  assert.equal(previewMatches({ commitSha: 'a1', kind: 'draft', key: 'k' }, 'k', status('a1', true)), true);
-  assert.equal(previewMatches({ commitSha: 'a1', kind: 'draft', key: 'k' }, 'k2', status('a1', true)), false);
-  assert.equal(previewMatches({ commitSha: 'a1', kind: 'restore', key: null }, 'k2', status('a1', false)), true);
+  assert.equal(match({ record: { commitSha: 'a1', kind: 'draft', key: 'k' }, status: status('a1', true) }), true);
+  assert.equal(match({ record: { commitSha: 'a1', kind: 'draft', key: 'k' }, configKey: 'k2', status: status('a1', true) }), false);
+  assert.equal(match({ record: { commitSha: 'a1', kind: 'restore', key: null }, configKey: 'k2', status: status('a1', false) }), true);
 });
 
-test('a browser with no record trusts the server: a green preview is publishable', () => {
-  assert.equal(previewMatches(null, 'k', status('b2', true)), true);
-  assert.equal(previewMatches(null, 'k', status('b2', false)), false);
+// The phone built the preview from the shared draft; the laptop never did, or built an older one.
+test('a preview another device built from this same draft matches, whatever this browser recorded', () => {
+  const draft = { previewSha: 'b2', key: 'k' };
+  assert.equal(match({ draft, status: status('b2', true) }), true);
+  assert.equal(match({ record: { commitSha: 'a1', kind: 'draft', key: 'k' }, draft, status: status('b2', true) }), true);
+  assert.equal(match({ draft, configKey: 'k2', status: status('b2', true) }), false, 'edited here since that draft was saved');
 });
 
-// The phone builds a preview after the laptop built an older one: the laptop's record names a commit that is
-// no longer on admin-preview, so it says nothing about the new preview.
-test('a record of an older preview is ignored, as if this browser had none', () => {
-  assert.equal(previewMatches({ commitSha: 'a1', kind: 'draft', key: 'k' }, 'k', status('b2', true)), true);
-  assert.equal(previewMatches({ commitSha: 'a1', kind: 'draft', key: 'k' }, 'k', status('b2', false)), false);
+// Publishing it would ship some other change and drop this draft with it.
+test('a green preview of something else does not match a draft with changes of its own', () => {
+  assert.equal(match({ status: status('b2', true) }), false);
+  assert.equal(match({ record: { commitSha: 'a1', kind: 'draft', key: 'k' }, status: status('b2', true) }), false);
+  assert.equal(match({ draft: { previewSha: 'c3', key: 'k' }, status: status('b2', true) }), false);
+});
+
+test('with nothing pending here, a green preview built elsewhere (a restore, say) is publishable', () => {
+  assert.equal(match({ hasChanges: false, status: status('b2', true) }), true);
+  assert.equal(match({ hasChanges: false, status: status('b2', false) }), false);
+  assert.equal(match({ hasChanges: false, record: { commitSha: 'a1', kind: 'draft', key: 'k' }, status: status('b2', true) }), true);
 });

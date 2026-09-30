@@ -4,8 +4,8 @@ import { previewMatches as matchPreview } from '../preview-match';
 
 const AUTOSAVE_MS = 3000;
 const VALIDATE_MS = 700;
-// Which draft the preview on admin-preview was built from. Per browser: on another device the bar falls back
-// to what the server reports (a green, publishable preview).
+// Which draft the preview on admin-preview was built from, as this browser built it. Another device reads the
+// same fact from the server's draft (previewSha).
 const PREVIEW_KEY = 'dt-admin-preview';
 
 function readPreviewRecord() {
@@ -112,7 +112,21 @@ export default function useDraft(api) {
     setPreviewRecord(record);
   }, []);
 
-  const previewMatches = useCallback((status) => matchPreview(previewRecord, configKey, status), [previewRecord, configKey]);
+  const serverDraft = site && site.draft;
+  const serverDraftKey = useMemo(() => (serverDraft ? stableStringify(serverDraft.config) : null), [serverDraft]);
+  const serverPreviewSha = serverDraft ? serverDraft.previewSha : null;
+  const hasChanges = localChanges.length > 0;
+  const previewMatches = useCallback(
+    (status) =>
+      matchPreview({
+        record: previewRecord,
+        configKey,
+        status,
+        draft: serverPreviewSha ? { previewSha: serverPreviewSha, key: serverDraftKey } : null,
+        hasChanges,
+      }),
+    [previewRecord, configKey, serverPreviewSha, serverDraftKey, hasChanges]
+  );
 
   const buildPreview = useCallback(async () => {
     const r = await api.post('/admin/site/preview', { config, baseSha });

@@ -219,7 +219,7 @@ describe('website tools against the mock GitHub', () => {
     assert.ok(!Number.isNaN(Date.parse(saved.json.savedAt)));
 
     const resumed = (await owner.get('/api/admin/site')).json.draft;
-    assert.deepEqual(resumed, { config, baseSha: seedSha, savedAt: saved.json.savedAt });
+    assert.deepEqual(resumed, { config, baseSha: seedSha, savedAt: saved.json.savedAt, previewSha: null });
 
     assert.equal((await owner.post('/api/admin/site/draft', { config: [], baseSha: seedSha })).status, 400);
     assert.equal((await owner.post('/api/admin/site/draft', { config, baseSha: 'main' })).status, 400);
@@ -304,6 +304,25 @@ describe('website tools against the mock GitHub', () => {
     assert.equal(audit.length, 1);
     assert.equal(audit[0].entity_id, p1Ref);
     assert.deepEqual(JSON.parse(audit[0].entity_data), { ref: p1Ref, commit: p1, changedPaths: ['contactEmail', 'owner.jobTitle'] });
+  });
+
+  // Another device resuming the draft learns which preview holds it, so it can offer Publish for that one
+  // preview and no other.
+  test('the draft remembers the preview built from it until the draft changes', async () => {
+    let d = (await owner.get('/api/admin/site')).json.draft;
+    assert.equal(d.previewSha, p1);
+    assert.equal(d.baseSha, seedSha);
+    assert.equal(d.config.owner.jobTitle, 'Operations consultant');
+
+    await owner.post('/api/admin/site/draft', { config: d.config, baseSha: d.baseSha });
+    assert.equal((await owner.get('/api/admin/site')).json.draft.previewSha, p1, 'the same draft saved again keeps it');
+
+    const edited = { ...structuredClone(d.config), tagline: 'Remote operations and automation' };
+    await owner.post('/api/admin/site/draft', { config: edited, baseSha: d.baseSha });
+    d = (await owner.get('/api/admin/site')).json.draft;
+    assert.equal(d.previewSha, null, 'an edited draft is not what the preview holds');
+    await owner.post('/api/admin/site/draft', { config: structuredClone(SITE), baseSha: seedSha });
+    assert.equal((await owner.get('/api/admin/site')).json.draft.previewSha, null, 'nor is one that went back to main');
   });
 
   test('status follows the preview run: building, step 2, then ready', async () => {
