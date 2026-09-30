@@ -62,7 +62,7 @@ export default function CardPreview({ config, liveOrigin, slogan = 'You own the 
               sizes="96px"
               width="800"
               height="800"
-              alt={owner.name ? owner.name + ', portrait' : ''}
+              alt={owner.name ? owner.name + ', black-and-white portrait on orange' : ''}
             />
           ) : null}
           <p className="cp-eyebrow">
