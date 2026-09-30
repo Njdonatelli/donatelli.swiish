@@ -348,8 +348,18 @@ describe('a production server', () => {
     res = await owner.get('/api/admin/audit?before=2000-01-01T00:00:00Z');
     assert.deepEqual(res.json.items, []);
 
-    for (const bad of ['entity_type=user', 'limit=0', 'limit=101', 'before=yesterday']) {
-      assert.equal((await owner.get(`/api/admin/audit?${bad}`)).status, 400, bad);
+    const badQueries = {
+      'entity_type=user': /^entity_type must be/,
+      'entity_type=auth&entity_type=site': /^entity_type must be/,
+      'limit=0': /^limit must be/,
+      'limit=101': /^limit must be/,
+      'limit=1&limit=2': /^limit must be/,
+      'before=yesterday': /^before must be/,
+    };
+    for (const [bad, message] of Object.entries(badQueries)) {
+      const refused = await owner.get(`/api/admin/audit?${bad}`);
+      assert.equal(refused.status, 400, bad);
+      assert.match(refused.json.error, message, bad);
     }
   });
 

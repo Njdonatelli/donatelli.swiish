@@ -3989,10 +3989,16 @@ const AUDIT_ENTITY_TYPES = ['connection', 'site', 'auth'];
 // SQLite CURRENT_TIMESTAMP is UTC written without a zone marker
 const sqliteUtcToIso = (value) => (value ? new Date(value.replace(' ', 'T') + 'Z').toISOString() : null);
 
+// A repeated query key arrives as an array, which the checks would accept item by item.
+const singleQuery = (name, message) => queryParam(name).optional().not().isArray().withMessage(message).bail();
+
 app.get('/api/admin/audit', requireAuth, requireRole('owner'), adminReadLimiter, [
-  queryParam('entity_type').optional().isIn(AUDIT_ENTITY_TYPES).withMessage('entity_type must be connection, site or auth.'),
-  queryParam('limit').optional().isInt({ min: 1, max: 100 }).withMessage('limit must be a whole number from 1 to 100.'),
-  queryParam('before').optional().isISO8601().withMessage('before must be an ISO 8601 time.')
+  singleQuery('entity_type', 'entity_type must be connection, site or auth.')
+    .isIn(AUDIT_ENTITY_TYPES).withMessage('entity_type must be connection, site or auth.'),
+  singleQuery('limit', 'limit must be a whole number from 1 to 100.')
+    .isInt({ min: 1, max: 100 }).withMessage('limit must be a whole number from 1 to 100.'),
+  singleQuery('before', 'before must be an ISO 8601 time.')
+    .isISO8601().withMessage('before must be an ISO 8601 time.')
 ], handleValidationErrors, async (req, res, next) => {
   res.set('Cache-Control', 'no-store');
   if (!req.user.organisationId) {
