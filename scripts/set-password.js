@@ -109,7 +109,9 @@ async function main(argv) {
     if (password.length < MIN_LENGTH) throw new CliError(`Password not changed: use at least ${MIN_LENGTH} characters.`);
     if (password !== repeat) throw new CliError('Password not changed: the two entries did not match.');
 
-    const hash = await bcrypt.hash(password, 12);
+    // The server's cost: login answers an unknown email with a compare at this cost, so a different
+    // one here would show by its timing which address has the account.
+    const hash = await bcrypt.hash(password, 10);
     const changes = await run(
       db,
       'UPDATE users SET password_hash = ?, session_version = session_version + 1, updated_at = CURRENT_TIMESTAMP WHERE email = ?',

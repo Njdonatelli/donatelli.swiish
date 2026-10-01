@@ -1273,7 +1273,8 @@ app.post('/api/setup/initialize', apiLimiter, csrfProtection, requireSetupToken,
   });
 });
 
-// Cost 10 matches every stored hash, so comparing against it takes as long as a real check.
+// Cost 10 is the cost of every hash the server and scripts/set-password.js store, so comparing against
+// it takes as long as a real check (test/unit/password-cost.test.js holds them to one cost).
 const DUMMY_PASSWORD_HASH = bcrypt.hashSync(require('crypto').randomBytes(16).toString('hex'), 10);
 
 // Login

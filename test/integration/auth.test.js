@@ -6,6 +6,7 @@ const net = require('net');
 const path = require('path');
 const { spawn } = require('child_process');
 const sqlite3 = require('sqlite3');
+const bcrypt = require('bcrypt');
 const { startServer, runUntilExit } = require('../helpers/server-harness');
 const { createClient } = require('../helpers/cookie-jar');
 const { seedMember, setRole } = require('../helpers/seed-member');
@@ -475,9 +476,14 @@ describe('a production server', () => {
     assert.equal(run.code, 1);
     assert.match(run.stderr, /did not match/);
 
+    const hashOf = async () => (await query(srv.dbFile, 'SELECT password_hash FROM users WHERE email = ?', [OWNER]))[0].password_hash;
+    const serverHash = await hashOf();
     run = await runScript(srv.dir, [script, OWNER.toUpperCase()], 'shell owner password\nshell owner password\n');
     assert.equal(run.code, 0, run.stderr);
     assert.match(run.stdout, /Password changed for owner@example\.com/);
+    // Login times an unknown email against a dummy hash at the server's cost; a reset at another cost
+    // would make the owner's address answer at a different speed.
+    assert.equal(bcrypt.getRounds(await hashOf()), bcrypt.getRounds(serverHash), 'the shell reset hashes at the server\'s cost');
 
     assert.equal((await owner.get('/api/auth/me')).status, 401);
     assert.equal((await owner.login(OWNER, ownerPassword)).status, 401);
