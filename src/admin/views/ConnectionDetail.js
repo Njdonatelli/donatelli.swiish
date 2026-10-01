@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import Heading from '../ui/Heading';
 import Button, { ButtonLink } from '../ui/Button';
@@ -12,6 +12,9 @@ const STATUS_OPTIONS = [
   { value: 'contacted', label: 'Contacted' },
   { value: 'archived', label: 'Archived' },
 ];
+
+// Arrow keys on a closed select fire change for every option they pass; the save waits for a pause.
+const STATUS_SAVE_MS = 500;
 
 function Row({ label, children }) {
   return (
@@ -33,38 +36,78 @@ export default function ConnectionDetail({ api, id: idProp }) {
   const [notesMsg, setNotesMsg] = useState({ tone: 'ok', text: '' });
   const [savingNotes, setSavingNotes] = useState(false);
   const [deleting, setDeleting] = useState({ open: false, busy: false, error: null });
+  // confirmed: the status the server last returned. pending: chosen here, not sent yet. seq names the
+  // newest status request, so an older answer arriving last cannot set the select or the message.
+  const confirmed = useRef(null);
+  const pending = useRef(null);
+  const statusTimer = useRef(null);
+  const seq = useRef(0);
+  const statusInFlight = useRef(0);
+  const url = '/admin/connections/' + encodeURIComponent(id);
 
   useEffect(() => {
     api
-      .get('/admin/connections/' + encodeURIComponent(id))
+      .get(url)
       .then((r) => {
+        confirmed.current = r.connection.status;
         setC(r.connection);
         setNotes(r.connection.ownerNotes || '');
       })
       .catch((e) => setError(e.status === 404 || e.status === 400 ? 'This connection does not exist. It may have been deleted or erased.' : e.message));
-  }, [api, id]);
+  }, [api, url]);
 
-  const setStatus = async (value) => {
-    const before = c.status;
-    setC({ ...c, status: value });
-    setStatusMsg('');
+  const sendStatus = useCallback(async () => {
+    clearTimeout(statusTimer.current);
+    statusTimer.current = null;
+    const value = pending.current;
+    pending.current = null;
+    if (value === null || value === confirmed.current) return;
+    const my = ++seq.current;
+    statusInFlight.current += 1;
     try {
-      const r = await api.post('/admin/connections/' + encodeURIComponent(id), { status: value });
-      setC(r.connection);
-      const label = STATUS_OPTIONS.find((o) => o.value === value).label.toLowerCase();
-      setStatusMsg('Marked ' + label + ' at ' + formatTime(new Date()) + '.');
+      const r = await api.post(url, { status: value });
+      confirmed.current = r.connection.status;
+      if (my === seq.current && pending.current === null) {
+        setC(r.connection);
+        const option = STATUS_OPTIONS.find((o) => o.value === r.connection.status);
+        setStatusMsg('Marked ' + (option ? option.label.toLowerCase() : r.connection.status) + ' at ' + formatTime(new Date()) + '.');
+      }
     } catch (e) {
-      setC({ ...c, status: before });
-      setStatusMsg('Status not saved: ' + e.message);
+      if (my === seq.current && pending.current === null) {
+        setC((cur) => ({ ...cur, status: confirmed.current }));
+        setStatusMsg('Status not saved: ' + e.message);
+      }
+    } finally {
+      statusInFlight.current -= 1;
     }
+  }, [api, url]);
+
+  const setStatus = (value) => {
+    setC((cur) => ({ ...cur, status: value }));
+    setStatusMsg('');
+    pending.current = value;
+    clearTimeout(statusTimer.current);
+    statusTimer.current = setTimeout(sendStatus, STATUS_SAVE_MS);
   };
+
+  // Leaving the page within the pause still saves the status the owner chose.
+  useEffect(() => () => {
+    if (!statusTimer.current) return;
+    clearTimeout(statusTimer.current);
+    if (pending.current !== null && pending.current !== confirmed.current) {
+      api.post(url, { status: pending.current }).catch(() => {});
+    }
+  }, [api, url]);
 
   const saveNotes = async (e) => {
     e.preventDefault();
     setSavingNotes(true);
     try {
-      const r = await api.post('/admin/connections/' + encodeURIComponent(id), { ownerNotes: notes.trim() ? notes : null });
-      setC(r.connection);
+      const r = await api.post(url, { ownerNotes: notes.trim() ? notes : null });
+      // A status chosen or still being saved keeps the select; the notes answer may predate it.
+      const statusBusy = pending.current !== null || statusInFlight.current > 0;
+      if (!statusBusy) confirmed.current = r.connection.status;
+      setC((cur) => ({ ...r.connection, status: statusBusy ? cur.status : r.connection.status }));
       setNotesMsg({ tone: 'ok', text: 'Notes saved at ' + formatTime(new Date()) + '.' });
     } catch (err) {
       setNotesMsg({ tone: 'bad', text: 'Notes not saved: ' + err.message });
@@ -156,6 +199,9 @@ export default function ConnectionDetail({ api, id: idProp }) {
           options={STATUS_OPTIONS}
           value={c.status}
           onChange={(e) => setStatus(e.target.value)}
+          onBlur={() => {
+            if (statusTimer.current) sendStatus();
+          }}
           className="narrow"
         />
         <p className="status-msg" role="status" data-tone={statusMsg.indexOf('not saved') !== -1 ? 'bad' : 'ok'}>{statusMsg}</p>
