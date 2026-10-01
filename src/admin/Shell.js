@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useId, useRef, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate, Link } from 'react-router-dom';
 import Wordmark from './ui/Wordmark';
 import Icon, { Globe, IdCard, LayoutDashboard, LogOut, User, Users } from './ui/Icon';
@@ -15,17 +15,23 @@ const TABS = [
   { to: '/admin/website', label: 'Website', icon: Globe },
 ];
 
+// A disclosure (button + aria-expanded), not an ARIA menu: two plain items need no arrow-key model.
 function AccountMenu({ email, onLogout }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
+  const button = useRef(null);
+  const popId = useId();
 
   useEffect(() => {
     if (!open) return undefined;
     const onDown = (e) => {
       if (ref.current && !ref.current.contains(e.target)) setOpen(false);
     };
+    // Closing unmounts the focused item, so focus goes back to the button instead of to <body>.
     const onKey = (e) => {
-      if (e.key === 'Escape') setOpen(false);
+      if (e.key !== 'Escape') return;
+      setOpen(false);
+      if (button.current) button.current.focus();
     };
     document.addEventListener('pointerdown', onDown);
     document.addEventListener('keydown', onKey);
@@ -35,20 +41,27 @@ function AccountMenu({ email, onLogout }) {
     };
   }, [open]);
 
+  // Tabbing out closes it. A null relatedTarget is a click on an item in Safari, which does not focus
+  // buttons on click; closing then would remove the item before its click lands.
+  const onBlur = (e) => {
+    if (open && e.relatedTarget && !e.currentTarget.contains(e.relatedTarget)) setOpen(false);
+  };
+
   return (
-    <div className="menu" ref={ref}>
+    <div className="menu" ref={ref} onBlur={onBlur}>
       <button
+        ref={button}
         type="button"
         className="btn btn-quiet btn-icon"
         aria-label="Account menu"
-        aria-haspopup="true"
         aria-expanded={open ? 'true' : 'false'}
+        aria-controls={open ? popId : undefined}
         onClick={() => setOpen(!open)}
       >
         <Icon as={User} size={20} />
       </button>
       {open ? (
-        <div className="menu-pop">
+        <div className="menu-pop" id={popId}>
           {email ? <p className="who">{email}</p> : null}
           <Link className="menu-item" to="/admin/account" onClick={() => setOpen(false)}>
             <Icon as={User} size={16} /> Account
