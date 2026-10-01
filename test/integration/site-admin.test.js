@@ -462,7 +462,7 @@ describe('website tools against the mock GitHub', () => {
   test('a draft on an older main that edits the same field is STALE, and the stored draft is rebased', async () => {
     const config = JSON.parse(mock.fileAt(p1, 'data/site.json'));
     config.year = 2028;
-    config.owner.city = 'Carlsbad';
+    config.owner.jobTitle = 'Operations lead';
     await owner.post('/api/admin/site/draft', { config, baseSha: p1 });
     const res = await owner.post('/api/admin/site/preview', { config, baseSha: p1 });
     assert.equal(res.status, 409);
@@ -474,7 +474,7 @@ describe('website tools against the mock GitHub', () => {
     const draft = (await owner.get('/api/admin/site')).json.draft;
     assert.equal(draft.baseSha, movedMain);
     assert.equal(draft.config.year, 2027, 'the clashing field shows the upstream value');
-    assert.equal(draft.config.owner.city, 'Carlsbad', 'other edits are kept');
+    assert.equal(draft.config.owner.jobTitle, 'Operations lead', 'other edits are kept');
   });
 
   test('revert builds a new preview that restores an old version (read-only fields excepted)', async () => {
@@ -764,20 +764,22 @@ describe('the draft across devices, restores and upstream commits', () => {
     const p = built.json.commitSha;
 
     // The laptop edits after the phone loaded the green preview
-    const laptop = { ...structuredClone(built.json.draft.config), owner: { ...built.json.draft.config.owner, city: 'Carlsbad' } };
+    const laptop = structuredClone(built.json.draft.config);
+    laptop.owner.givenName = 'Nicolas';
+    laptop.owner.name = `Nicolas ${laptop.owner.familyName}`;
     assert.equal((await owner.post('/api/admin/site/draft', { config: laptop, baseSha: built.json.draft.baseSha, rev: built.json.draft.rev })).status, 200);
     await publishGreen(p);
 
     const after = await getDraft();
     assert.ok(after, 'the newer edit is not deleted with the published one');
     assert.equal(after.baseSha, p);
-    assert.equal(after.config.owner.city, 'Carlsbad');
+    assert.equal(after.config.owner.givenName, 'Nicolas');
     const next = await owner.post('/api/admin/site/preview', { config: after.config, baseSha: after.baseSha, rev: after.rev });
     assert.equal(next.status, 202, next.text);
-    assert.deepEqual(next.json.changes.map((c) => c.path), ['owner.city'], 'no false STALE, only the newer edit');
+    assert.deepEqual(next.json.changes.map((c) => c.path), ['owner.name', 'owner.givenName'], 'no false STALE, only the newer edit');
     const creds = JSON.parse(mock.fileAt(next.json.commitSha, 'outputs/data/credentials.json'));
-    assert.equal(creds.entries.owner_location.value, 'Carlsbad, California');
-    assert.equal(creds.entries.owner_location.date, todayInLA());
+    assert.equal(creds.entries.owner_name.value, `Nicolas ${after.config.owner.familyName}`);
+    assert.equal(creds.entries.owner_name.date, todayInLA());
     await publishGreen(next.json.commitSha);
     assert.equal(await getDraft(), null, 'publishing the draft its preview was built from drops it');
   });
@@ -819,8 +821,8 @@ describe('the draft across devices, restores and upstream commits', () => {
   test('name parts edited on both sides are STALE as one value, and the stored draft keeps rule R1', async () => {
     const base = mainSha();
     const draftConfig = siteAt(base);
-    draftConfig.owner.givenName = 'Nicolas';
-    draftConfig.owner.name = `Nicolas ${draftConfig.owner.familyName}`;
+    draftConfig.owner.givenName = 'Nico';
+    draftConfig.owner.name = `Nico ${draftConfig.owner.familyName}`;
     draftConfig.owner.jobTitle = 'Kept through the clash';
     assert.equal((await owner.post('/api/admin/site/draft', { config: draftConfig, baseSha: base, rev: 0 })).status, 200);
     push((s) => {

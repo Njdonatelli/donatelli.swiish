@@ -268,5 +268,90 @@
     "expect": [
       "card.connect.notice"
     ]
+  },
+  {
+    "name": "no public email (security.txt needs a Contact)",
+    "set": [
+      {
+        "path": "contactEmail",
+        "value": null
+      }
+    ],
+    "expect": [
+      "contactEmail"
+    ]
+  },
+  {
+    "name": "a profile link with a query string",
+    "set": [
+      {
+        "path": "sameAs",
+        "value": [
+          "https://www.google.com/maps?cid=1234567890&hl=en"
+        ]
+      }
+    ],
+    "expect": []
+  },
+  {
+    "name": "a card link with & in it",
+    "set": [
+      {
+        "path": "card.links",
+        "value": [
+          {
+            "label": "Listing",
+            "url": "https://example.com/listing?a=1&b=2"
+          }
+        ]
+      }
+    ],
+    "expect": []
+  },
+  {
+    "name": "markup characters in a link",
+    "set": [
+      {
+        "path": "ownerSameAs",
+        "value": [
+          "https://example.com/\"onmouseover=x",
+          "https://example.com/<b>",
+          "https://example.com/`x`"
+        ]
+      }
+    ],
+    "expect": [
+      "ownerSameAs.0",
+      "ownerSameAs.1",
+      "ownerSameAs.2"
+    ]
+  },
+  {
+    "name": "a control character in a link",
+    "set": [
+      {
+        "path": "sameAs",
+        "value": [
+          "https://example.com/a\u0007b",
+          "https://example.com/ab"
+        ]
+      }
+    ],
+    "expect": [
+      "sameAs.0",
+      "sameAs.1"
+    ]
+  },
+  {
+    "name": "a Google Maps listing link as copied (over 200 characters)",
+    "set": [
+      {
+        "path": "sameAs",
+        "value": [
+          "https://www.google.com/maps/place/donatelli.tech/@33.1433723,-117.1661449,17z/data=!3m1!4b1!4m6!3m5!1s0x80dc0b0e0e0e0e0e:0x1234567890abcdef!8m2!3d33.1433723!4d-117.16357!16s%2Fg%2F11abcdefgh?entry=ttu&g_ep=EgoyMDI2MDkyOC4wIKXMDSoASAFQAw%3D%3D"
+        ]
+      }
+    ],
+    "expect": []
   }
 ]

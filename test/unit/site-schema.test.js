@@ -38,8 +38,8 @@ test('the fixture site.json round-trips byte for byte and passes every rule', ()
   assert.deepEqual(errorsOf(SITE), []);
 });
 
-test('the shared cases file holds the 21 cases', () => {
-  assert.equal(CASES.length, 21);
+test('the shared cases file holds the 27 cases', () => {
+  assert.equal(CASES.length, 27);
 });
 
 for (const [i, c] of CASES.entries()) {
@@ -207,7 +207,7 @@ test('sync: the fixtures match the website checkout', { skip: WEBSITE ? false : 
 });
 
 // The byte-identical cases file only helps if both engines read it the same way, so the website's own
-// engine runs here too, on every shared case and on documents the 21 cases do not reach.
+// engine runs here too, on every shared case and on documents the shared cases do not reach.
 test('sync: the website engine gives the same errors, in the same order, as this one', { skip: WEBSITE && fs.existsSync(path.join(WEBSITE, 'tools', 'site-schema.mjs')) ? false : 'no donatelli-website engine on this machine' }, async () => {
   const web = await import(path.join(WEBSITE, 'tools', 'site-schema.mjs'));
   const webErrorsOf = (s) => [...web.validate(SCHEMA, s), ...web.crossFieldErrors(s)];
