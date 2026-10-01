@@ -18,6 +18,13 @@ import { formatDateTime, formatTime, shortSha } from '../format';
 
 const PREVIEW_STATES = new Set(['preview_building', 'preview_ready', 'preview_failed']);
 
+// The production state a rollback was requested against. The rollback run is not a site.yml run, so it
+// leaves this key alone; a publish (new main) or a redeploy (a newer site.yml run) changes it.
+function prodKey(status) {
+  const p = (status && status.production) || {};
+  return (p.mainSha || '') + ':' + (p.run ? p.run.id : '');
+}
+
 function runKey(status) {
   if (!status) return '';
   const r = (x) => (x && x.run ? x.run.id + ':' + x.run.status + ':' + x.run.conclusion : '-');
@@ -94,7 +101,8 @@ export default function WebsiteView({ api }) {
   const [restorePlan, setRestorePlan] = useState(null);
   const [rollback, setRollback] = useState({ open: false, dryRun: false, busy: false, error: null });
   const [recovery, setRecovery] = useState({ tone: 'ok', text: '', url: null });
-  const [rolledBack, setRolledBack] = useState(false);
+  // Shows the rollback callout at once, until the server reports rolled_back or production moves on.
+  const [rolledBack, setRolledBack] = useState(null);
   const site = draft.site;
   const ready = site && site.configured !== false && draft.config;
   const mainSha = (status && status.production && status.production.mainSha) || draft.mainSha;
@@ -155,7 +163,7 @@ export default function WebsiteView({ api }) {
       if (rollback.dryRun) {
         setRecovery({ tone: 'ok', text: 'Rollback plan requested at ' + formatTime(new Date()) + '. The run summary lists the target; nothing changed.', url: r.htmlUrl });
       } else {
-        setRolledBack(true);
+        setRolledBack(prodKey(status));
         setRecovery({ tone: 'ok', text: 'Rollback started at ' + formatTime(new Date()) + '.', url: r.htmlUrl });
       }
       siteStatus.refresh({ fast: true });
@@ -171,7 +179,7 @@ export default function WebsiteView({ api }) {
     if (r) setRestored({ sha: target.sha, changes: r.changes || [] });
   };
 
-  const showRolledBack = rolledBack || (status && status.state === 'rolled_back');
+  const showRolledBack = (status && status.state === 'rolled_back') || (rolledBack !== null && rolledBack === prodKey(status));
   const plan = restoring && restorePlan && restorePlan.sha === restoring.sha ? restorePlan : null;
 
   return (
