@@ -64,6 +64,12 @@
 }
 /* The QR plate keeps dark modules on light in both themes, like the site's card. */
 :root{--dt-qr-fg:#0E0D0C;--dt-qr-bg:#FAF9F7}
+/* On elev-3 (#37342F in dark) --dt-danger is 4.36:1, under AA's 4.5:1 for 14px text, so a dialog takes a
+   raised danger step, as the system does for borders with --dt-border-strong-raised (#F58A83 is 5.22:1). */
+:root{--dt-danger-raised:#B42318}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--dt-danger-raised:#F58A83}}
+:root[data-theme="dark"]{--dt-danger-raised:#F58A83}
+.dialog{--dt-danger:var(--dt-danger-raised)}
 *{box-sizing:border-box}
 body{margin:0;background:var(--dt-bg);color:var(--dt-text);font:400 16px/1.5 var(--sans);-webkit-font-smoothing:antialiased}
 code,.mono{font-family:var(--mono)}
