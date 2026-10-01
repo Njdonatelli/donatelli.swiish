@@ -479,3 +479,18 @@ describe('site-admin routes through a fetch spy', () => {
     }
   });
 });
+
+describe('branch names', () => {
+  // "x/../main" survives a string compare with "main", then the URL parser resolves it to main.
+  test('a ref read or write on a dotted or empty-segment name throws before any request', async () => {
+    const fetch = fakeFetch(() => json(200, { object: { sha: SHA } }));
+    const gh = client(fetch);
+    for (const name of ['x/../main', './main', 'main/.', 'main/', 'a//b', '.hidden', 'foo.lock']) {
+      await assert.rejects(gh.updateRef(name, SHA, { force: true }), /not a plain branch name/, name);
+      await assert.rejects(gh.getRef(name), /not a plain branch name/, name);
+      await assert.rejects(gh.setBranch(name, SHA, { force: true }), /not a plain branch name/, name);
+    }
+    assert.equal(fetch.calls.length, 0);
+    assert.deepEqual(await gh.getRef('feature/admin-preview'), { sha: SHA });
+  });
+});

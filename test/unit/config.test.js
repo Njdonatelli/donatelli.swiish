@@ -119,6 +119,17 @@ test('the preview branch can never equal the production branch, even in developm
   assert.match(problemsFor({ JWT_SECRET: SECRET, SITE_PREVIEW_BRANCH: 'main' })[0], /SITE_PREVIEW_BRANCH equals/);
 });
 
+test('branch names with an empty, ".." or dot-led part are refused for both branches', () => {
+  for (const bad of ['x/../main', './main', 'main/', 'a//b', '.hidden', 'foo.lock', 'main.', 'has space']) {
+    for (const name of ['SITE_GITHUB_BRANCH', 'SITE_PREVIEW_BRANCH']) {
+      const problems = problemsFor({ ...PROD, [name]: bad });
+      assert.equal(problems.length, 1, `${name}=${bad}: ${JSON.stringify(problems)}`);
+      assert.match(problems[0], new RegExp(`^${name} is "${bad.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}", which is not a plain branch name`));
+    }
+  }
+  assert.deepEqual(problemsFor({ ...PROD, SITE_GITHUB_BRANCH: 'release/v1.2', SITE_PREVIEW_BRANCH: 'admin_preview-2' }), []);
+});
+
 test('empty strings count as unset (dotenv and compose env_file write KEY=)', () => {
   const config = load({ ...PROD, PORT: '', ALLOWED_ORIGINS: '', SETUP_TOKEN: '', SITE_GITHUB_TOKEN: ' ', CONNECT_INGEST_SECRET: '', ADMIN_TIME_ZONE: '' });
   assert.equal(config.port, 3000);
