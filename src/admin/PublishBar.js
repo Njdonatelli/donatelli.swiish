@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useLayoutEffect, useRef } from 'react';
 import Button, { ExternalLink } from './ui/Button';
 import { pluralize } from './format';
 
@@ -10,6 +10,21 @@ function stepText(status) {
 // The sticky bar on Card and Website. It holds the view's one primary action, and which one depends on where
 // the draft is: unsaved changes → Build preview; green preview of this draft → Publish.
 export default function PublishBar({ status, draft, onBuildPreview, onPublish, onCancel, busy, error }) {
+  const ref = useRef(null);
+  // The bar's height changes as it wraps and gains buttons or an error line; admin.css keeps keyboard focus
+  // scrolled clear of it (WCAG 2.2 SC 2.4.11) by reading this variable.
+  useLayoutEffect(() => {
+    const el = ref.current;
+    const root = document.documentElement;
+    const set = () => root.style.setProperty('--publishbar-h', el.offsetHeight + 'px');
+    set();
+    const ro = typeof ResizeObserver === 'function' ? new ResizeObserver(set) : null;
+    if (ro) ro.observe(el);
+    return () => {
+      if (ro) ro.disconnect();
+      root.style.removeProperty('--publishbar-h');
+    };
+  }, []);
   const count = draft && draft.changes ? draft.changes.length : 0;
   const matches = draft ? draft.previewMatches(status) : false;
   const preview = (status && status.preview) || {};
@@ -59,7 +74,7 @@ export default function PublishBar({ status, draft, onBuildPreview, onPublish, o
   }
 
   return (
-    <div className="publishbar" role="region" aria-label="Publish">
+    <div className="publishbar" role="region" aria-label="Publish" ref={ref}>
       <div className="publishbar-inner">
         <p className="publishbar-label" aria-live="polite">
           {label}

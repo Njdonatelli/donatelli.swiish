@@ -267,8 +267,8 @@ a.wm:hover{color:var(--dt-text)}
 /* A table column as wide as its content, so a short value does not get half the table. */
 th.fit{width:1%}
 .search-field{max-width:420px}
-/* Room under the last section so the fixed publish bar never covers it. */
-.bar-space{height:96px}
+/* Room under the last section so the fixed publish bar never covers it, however tall it wraps. */
+.bar-space{height:96px;height:max(96px,calc(var(--publishbar-h,0px) + 16px))}
 .page-head .lede{max-width:60ch}
 
 /* ---------- Publish bar (holds the one primary on Card and Website) ---------- */
@@ -279,6 +279,11 @@ th.fit{width:1%}
 .publishbar-label small.field-error{color:var(--dt-danger)}
 .publishbar-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}
 @media (min-width:1024px){.publishbar{left:232px;bottom:0}.publishbar-inner{padding:12px 40px}}
+/* Keyboard focus scrolled into view clears the sticky topbar and the fixed bars (WCAG 2.2 SC 2.4.11).
+   PublishBar publishes its live height as --publishbar-h. Only while focus is in .main: padding while a
+   control in the sticky topbar has focus would scroll the page under the owner. */
+html:has(.main :focus){scroll-padding-top:64px;scroll-padding-bottom:calc(56px + env(safe-area-inset-bottom) + var(--publishbar-h,0px) + 8px)}
+@media (min-width:1024px){html:has(.main :focus){scroll-padding-bottom:calc(var(--publishbar-h,0px) + 8px)}}
 
 /* ---------- Segmented control ---------- */
 .seg{justify-self:start;display:inline-flex;border:1px solid var(--dt-border-strong);border-radius:4px;overflow:hidden;max-width:100%}
