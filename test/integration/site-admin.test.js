@@ -710,6 +710,50 @@ describe('the draft across devices, restores and upstream commits', () => {
     assert.equal((await owner.del('/api/admin/site/draft')).status, 200);
   });
 
+  // A save sent as the page hides or closes cannot wait for the answer to the page's previous save, so it
+  // carries that save's revision. The page's own id and edit count tell the two apart from another device.
+  test("a page's save sent before its previous save answered is kept; another page's is still refused", async () => {
+    const base = mainSha();
+    const page = 'a1b2c3d4e5f60718293a4b5c';
+    const at = (seq, tagline) => ({ config: { ...structuredClone(SITE), tagline }, baseSha: base, writer: page, seq });
+    const loaded = await owner.post('/api/admin/site/draft', { config: { ...structuredClone(SITE), tagline: 'Loaded' }, baseSha: base, rev: 0 });
+    assert.equal(loaded.status, 200, loaded.text);
+
+    const first = await owner.post('/api/admin/site/draft', { ...at(1, 'First edit'), rev: loaded.json.rev });
+    assert.equal(first.status, 200, first.text);
+    // The page has not seen first's answer yet: it still holds the loaded revision.
+    const second = await owner.post('/api/admin/site/draft', { ...at(2, 'Second edit'), rev: loaded.json.rev });
+    assert.equal(second.status, 200, second.text);
+    assert.ok(second.json.rev > first.json.rev);
+    assert.equal((await getDraft()).config.tagline, 'Second edit');
+
+    // An older save of the same page arriving last changes nothing and answers with the stored revision.
+    const late = await owner.post('/api/admin/site/draft', { ...at(1, 'First edit, sent twice'), rev: loaded.json.rev });
+    assert.equal(late.status, 200, late.text);
+    assert.equal(late.json.rev, second.json.rev);
+    assert.equal((await getDraft()).config.tagline, 'Second edit');
+
+    // Another page, or one that sends no id, still needs the stored revision.
+    for (const other of [{ writer: 'f0e1d2c3b4a5968778695a4b', seq: 9 }, {}]) {
+      const res = await owner.post('/api/admin/site/draft', { ...at(3, 'Elsewhere'), writer: other.writer, seq: other.seq, rev: first.json.rev });
+      assert.equal(res.status, 409, JSON.stringify(other));
+      assert.equal(res.json.code, 'DRAFT_CHANGED');
+    }
+    // A write the server made (a preview's stored draft) is not the page's own: its revision is the test again.
+    const preview = await owner.post('/api/admin/site/preview', { config: (await getDraft()).config, baseSha: base, rev: second.json.rev });
+    assert.equal(preview.status, 202, preview.text);
+    const afterPreview = await owner.post('/api/admin/site/draft', { ...at(3, 'Typed after the preview'), rev: second.json.rev });
+    assert.equal(afterPreview.status, 409, afterPreview.text);
+    assert.equal((await owner.post('/api/admin/site/draft', { ...at(3, 'Typed after the preview'), rev: preview.json.draft.rev })).status, 200);
+
+    for (const bad of [{ writer: 'x' }, { writer: 12345678 }, { seq: -1 }, { seq: 'x' }]) {
+      assert.equal((await owner.post('/api/admin/site/draft', { ...at(4, 'Bad'), ...bad, rev: 0 })).status, 400, JSON.stringify(bad));
+    }
+    const shown = await getDraft();
+    assert.ok(!('writer' in shown) && !('seq' in shown), 'the page id stays on the server');
+    assert.equal((await owner.del('/api/admin/site/draft')).status, 200);
+  });
+
   test('a preview never overwrites a draft saved while it was building', async () => {
     const base = mainSha();
     const clicked = { ...structuredClone(SITE), tagline: 'Built from this' };
