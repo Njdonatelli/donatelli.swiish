@@ -331,6 +331,48 @@ describe('ingest configuration, rotation and caps', () => {
   });
 });
 
+describe('ingest under concurrent and repeated sends', () => {
+  test('a concurrent burst stores exactly the daily cap; the rest are 429', async () => {
+    const ctx = await makeApp({ env: { CONNECT_DAILY_CAP: '10' } });
+    try {
+      const results = await Promise.all(Array.from({ length: 30 }, (_, i) => ctx.ingest(visitor(`b-${i}`, { ipHash: hash16(`b-${i}`) }))));
+      const statuses = results.map((r) => r.status);
+      assert.equal(statuses.filter((s) => s === 201).length, 10, statuses.join(','));
+      assert.equal(statuses.filter((s) => s === 429).length, 20, statuses.join(','));
+      assert.equal((await ctx.dbGet('SELECT COUNT(*) AS n FROM connections')).n, 10);
+    } finally {
+      await ctx.close();
+    }
+  });
+
+  test('a concurrent burst from one visitor stores exactly the per-visitor limit', async () => {
+    const ctx = await makeApp();
+    try {
+      const results = await Promise.all(Array.from({ length: 20 }, (_, i) => ctx.ingest(visitor(`v-${i}`, { ipHash: hash16('one') }))));
+      assert.equal(results.filter((r) => r.status === 201).length, 5);
+      assert.equal(results.filter((r) => r.status === 429).length, 15);
+      assert.equal((await ctx.dbGet('SELECT COUNT(*) AS n FROM connections WHERE ip_hash = ?', [hash16('one')])).n, 5);
+    } finally {
+      await ctx.close();
+    }
+  });
+
+  test('one visitor sending past their limit through the relay does not block the next visitor', async () => {
+    const ctx = await makeApp();
+    try {
+      // Every send reaches this server from the relay's one address, as in production.
+      const statuses = [];
+      for (let i = 0; i < 125; i += 1) statuses.push((await ctx.ingest(visitor(`a-${i}`, { ipHash: hash16('attacker') }))).status);
+      assert.equal(statuses.filter((s) => s === 201).length, 5);
+      assert.equal(statuses.filter((s) => s === 429).length, 120);
+      const res = await ctx.ingest(visitor('next', { ipHash: hash16('someone else') }));
+      assert.equal(res.status, 201, res.text);
+    } finally {
+      await ctx.close();
+    }
+  });
+});
+
 describe('new-connection email', () => {
   const wait = () => new Promise((r) => setTimeout(r, 50));
 
