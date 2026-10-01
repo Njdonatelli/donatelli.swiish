@@ -20,6 +20,8 @@ async function createTestDb() {
   await dbm.up();
   const db = new sqlite3.Database(file);
   await new Promise((res, rej) => db.run('PRAGMA foreign_keys = ON', (e) => (e ? rej(e) : res())));
+  // As server.js opens it
+  await new Promise((res, rej) => db.run('PRAGMA secure_delete = ON', (e) => (e ? rej(e) : res())));
   const dbGet = util.promisify(db.get.bind(db));
   const dbAll = util.promisify(db.all.bind(db));
   const dbRunInfo = (sql, params = []) => new Promise((res, rej) =>

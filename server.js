@@ -311,6 +311,15 @@ db.run("PRAGMA foreign_keys = ON", (err) => {
   console.log('[DB] Foreign key constraints enabled');
 });
 
+// A plain DELETE only frees pages, leaving an erased visitor's details readable in cards.db until
+// SQLite reuses them. ON (not FAST) also zeroes freelist and overflow pages, where a long note can sit.
+db.run("PRAGMA secure_delete = ON", (err) => {
+  if (err) {
+    console.error('CRITICAL: Failed to enable secure_delete:', err);
+    process.exit(1);
+  }
+});
+
 if (IS_DEMO_MODE) {
   console.log(`[DB] Using demo database: ${DB_FILENAME}`);
 } else {

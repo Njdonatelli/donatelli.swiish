@@ -248,7 +248,7 @@ describe('connections on a production server', () => {
   });
 
   test('erase by email removes every record for the address and returns the count', async () => {
-    assert.equal((await send(visitor('Twice', { email: 'repeat@example.com' }))).status, 201);
+    assert.equal((await send(visitor('Twice', { email: 'repeat@example.com', note: 'EraseMarker QWERTYZXCV' }))).status, 201);
     assert.equal((await send(visitor('Twice again', { email: 'Repeat@Example.com' }))).status, 201);
     let res = await owner.post('/api/admin/connections/erase', { email: 'repeat@example.com', confirm: 'someone@example.com' });
     assert.equal(res.status, 400);
@@ -256,13 +256,20 @@ describe('connections on a production server', () => {
     assert.equal(res.status, 200, res.text);
     assert.deepEqual(res.json, { count: 2 });
     assert.equal((await query(srv.dbFile, "SELECT COUNT(*) AS n FROM connections WHERE email = 'repeat@example.com'"))[0].n, 0);
+    // secure_delete zeroes the freed pages, so the erased details are not left readable in the file
+    const bytes = fs.readFileSync(srv.dbFile);
+    assert.equal(bytes.includes('repeat@example.com'), false, 'the erased email is still in cards.db');
+    assert.equal(bytes.includes('EraseMarker QWERTYZXCV'), false, 'the erased note is still in cards.db');
   });
 
   test('delete removes one connection', async () => {
-    const res = await send(visitor('Delete'));
+    const res = await send(visitor('Delete', { email: 'deleteme@example.com', note: 'DeleteMarker ASDFGHJKL' }));
     assert.equal(res.status, 201);
     assert.deepEqual((await owner.del(`/api/admin/connections/${res.json.id}`)).json, { success: true });
     assert.equal((await owner.get(`/api/admin/connections/${res.json.id}`)).status, 404);
+    const bytes = fs.readFileSync(srv.dbFile);
+    assert.equal(bytes.includes('deleteme@example.com'), false);
+    assert.equal(bytes.includes('DeleteMarker ASDFGHJKL'), false);
   });
 
   test('a restart purges rows past expires_at and audits the count', async () => {
