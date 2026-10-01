@@ -31,8 +31,9 @@ export default function ForgotPasswordView({ api }) {
     <AuthFrame title="Reset your password.">
       {!mail ? (
         <Callout tone="warn">
-          <p>Email is not set up on this server. Reset the password from the server shell:</p>
-          <code className="cmd">node scripts/set-password.js &lt;email&gt;</code>
+          <p>Email is not set up on this server. Reset the password from a shell on the server, in the repository directory:</p>
+          <code className="cmd">docker compose exec swiish node scripts/set-password.js &lt;email&gt;</code>
+          <p className="small">Not running in Docker: <code>node scripts/set-password.js &lt;email&gt;</code>.</p>
         </Callout>
       ) : sent ? (
         <p className="status-msg" data-tone="ok" role="status">If that address has an account, a reset link is on its way.</p>
