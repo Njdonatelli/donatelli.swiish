@@ -206,6 +206,29 @@ test('failed: a cancelled run, and a failure with no jobs or no live build.json'
   assert.equal(s.detail, null);
 });
 
+// build.json is the evidence: when it already serves main, a failed run did not keep the change off the site.
+test('live, not "Not published", when build.json serves main and its run then failed', () => {
+  const verify = run(MAIN, { conclusion: 'failure' });
+  let s = status({ mainRuns: [verify], jobsByRunId: { [verify.id]: jobs({ failAt: 'Verify live' }) } });
+  assert.equal(s.state, 'live');
+  assert.equal(s.headline, 'Live since 4:11 PM, but the live check failed. Open the log, then redeploy.');
+  assert.equal(s.detail, 'The "Verify live" step failed.');
+
+  // A redeploy of a commit an earlier run already put live, failing early or cancelled
+  const green = run(MAIN, { createdAt: '2026-09-30T23:00:00Z', updatedAt: '2026-09-30T23:02:00Z' });
+  const redeploy = run(MAIN, { conclusion: 'failure', event: 'workflow_dispatch', createdAt: '2026-09-30T23:10:00Z' });
+  s = status({ mainRuns: [green, redeploy], jobsByRunId: { [redeploy.id]: jobs({ failAt: 'Install' }) } });
+  assert.equal(s.state, 'live');
+  assert.equal(s.headline, 'Live since 4:02 PM. Last change: job title.');
+  assert.equal(s.detail, 'The latest run on this commit failed: the "Install" step failed. The live site is unchanged.');
+  assert.equal(s.production.run.id, redeploy.id, 'the run link still opens the failed run');
+
+  const cancelled = run(MAIN, { conclusion: 'cancelled', event: 'workflow_dispatch', createdAt: '2026-09-30T23:10:00Z' });
+  s = status({ mainRuns: [green, cancelled], jobsByRunId: { [cancelled.id]: jobs({ cancelAt: 'Install' }) } });
+  assert.equal(s.state, 'live');
+  assert.equal(s.detail, 'The latest run on this commit was cancelled. The live site is unchanged.');
+});
+
 test('deploys_off: the run is green but GitHub skipped the deploy job', () => {
   const r = run(MAIN);
   const s = status({ mainRuns: [r], jobsByRunId: { [r.id]: jobs({ deploySkipped: true }) }, buildJson: LIVE_OLD });
