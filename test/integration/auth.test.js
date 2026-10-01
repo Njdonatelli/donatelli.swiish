@@ -2,6 +2,7 @@
 const { describe, test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
+const net = require('net');
 const path = require('path');
 const { spawn } = require('child_process');
 const sqlite3 = require('sqlite3');
@@ -164,6 +165,36 @@ describe('a production server', () => {
     assert.equal((await client.get('/api/auth/me')).status, 200);
   });
 
+  test('non-string email or password fields get 400 and never take the server down', async () => {
+    const cases = [
+      ['/api/auth/forgot-password', { email: ['x@example.com'] }],
+      ['/api/auth/forgot-password', { email: [OWNER] }],
+      ['/api/auth/forgot-password', { email: { a: OWNER } }],
+      ['/api/login', { email: OWNER, password: 12345 }],
+      ['/api/login', { email: OWNER, password: ['x'] }],
+      ['/api/login', { email: OWNER, password: { a: 1 } }],
+      ['/api/login', { email: 'nobody@example.com', password: ['x'] }],
+      ['/api/auth/reset-password', { token: ['a'.repeat(64)], password: 'long enough password' }],
+      ['/api/auth/reset-password', { token: 'a'.repeat(64), password: { a: 1 } }],
+    ];
+    for (const [route, json] of cases) {
+      const res = await clientFor(srv).post(route, json);
+      assert.equal(res.status, 400, `${route} ${JSON.stringify(json)}: ${res.text}`);
+    }
+    // Repeated form fields arrive as an array too
+    const form = await clientFor(srv).request('POST', '/api/auth/forgot-password', {
+      body: 'email=a%40b.co&email=c%40d.co',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    });
+    assert.equal(form.status, 400, form.text);
+    for (const json of [{ currentPassword: 12345, newPassword: 'long enough password' }, { currentPassword: ownerPassword, newPassword: ['a'.repeat(15)] }]) {
+      const res = await owner.post('/api/auth/change-password', json);
+      assert.equal(res.status, 400, `${JSON.stringify(json)}: ${res.text}`);
+    }
+    assert.equal((await clientFor(srv).get('/api/health')).status, 200);
+    assert.equal((await owner.get('/api/auth/me')).status, 200);
+  });
+
   test('a write without the CSRF token gets 403 CSRF, not 500', async () => {
     const res = await owner.post('/api/auth/logout-all', undefined, { csrf: false });
     assert.equal(res.status, 403);
@@ -266,6 +297,14 @@ describe('a production server', () => {
     let reset = await anon.post('/api/auth/reset-password', { token: row.token, password: 'too short' });
     assert.equal(reset.status, 400);
     assert.equal(reset.json.error, 'Use at least 12 characters.');
+
+    // With a valid token, a non-string password must still stop at validation, not at bcrypt
+    for (const password of [{ a: 1 }, ['aaaaaaaaaaaaaaa'], 123456789012345]) {
+      reset = await anon.post('/api/auth/reset-password', { token: row.token, password });
+      assert.equal(reset.status, 400, JSON.stringify(password));
+      assert.equal(reset.json.error, 'Use at least 12 characters.');
+    }
+    assert.equal((await anon.get('/api/health')).status, 200);
 
     reset = await anon.post('/api/auth/reset-password', { token: row.token, password: 'third owner password' });
     assert.equal(reset.status, 200, reset.text);
@@ -475,5 +514,46 @@ describe('a production server without SETUP_TOKEN', () => {
     assert.ok(res.headers.get('ratelimit-reset'), 'RateLimit-Reset tells the login page when to retry');
     // Another address is not affected
     assert.equal((await clientFor(srv).login(OWNER, 'wrong password here')).status, 401);
+  });
+});
+
+describe('a production server whose SMTP server never answers', () => {
+  let srv;
+  let smtp;
+  const sockets = new Set();
+
+  before(async () => {
+    // Accepts the connection and never sends a greeting, like a stalled mail provider.
+    smtp = net.createServer((socket) => { sockets.add(socket); socket.on('close', () => sockets.delete(socket)); });
+    await new Promise((resolve) => smtp.listen(0, '127.0.0.1', resolve));
+    srv = await startServer({
+      env: { SMTP_HOST: '127.0.0.1', SMTP_PORT: String(smtp.address().port), SMTP_USER: 'u', SMTP_PASSWORD: 'p' },
+    });
+    const res = await clientFor(srv).setupOwner({ email: OWNER, password: 'first owner password', setupToken: srv.env.SETUP_TOKEN });
+    assert.equal(res.status, 200, res.text);
+  });
+  after(async () => {
+    await srv.stop();
+    for (const socket of sockets) socket.destroy();
+    await new Promise((resolve) => smtp.close(resolve));
+  });
+
+  test('forgot-password answers a known address as fast as an unknown one', async () => {
+    const timed = async (email) => {
+      const started = Date.now();
+      const res = await clientFor(srv).post('/api/auth/forgot-password', { email });
+      return { res, ms: Date.now() - started };
+    };
+    const unknown = await timed('nobody@example.com');
+    const known = await timed(OWNER);
+    for (const { res } of [unknown, known]) {
+      assert.equal(res.status, 200);
+      assert.deepEqual(res.json, { success: true, message: 'If an account exists with this email, a password reset link has been sent' });
+    }
+    // The stalled send would hold the known address's answer for nodemailer's 30 s greeting timeout
+    assert.ok(known.ms < 2000, `known address took ${known.ms} ms`);
+    const [row] = await query(srv.dbFile, 'SELECT COUNT(*) AS n FROM password_reset_tokens WHERE used_at IS NULL');
+    assert.equal(row.n, 1);
+    assert.equal((await clientFor(srv).get('/api/health')).status, 200);
   });
 });

@@ -1155,9 +1155,14 @@ const requireSetupToken = (req, res, next) => {
 };
 
 app.post('/api/setup/initialize', apiLimiter, csrfProtection, requireSetupToken, [
-  body('organisationName').trim().isLength({ min: 1, max: 200 }).withMessage('Organisation name is required and must be less than 200 characters'),
-  body('adminEmail').isEmail({ allow_display_name: false, require_tld: false }).withMessage('Valid email required'),
-  body('adminPassword').isLength({ min: 12 }).withMessage('Use at least 12 characters.')
+  // isString first: the standard validators pass an array whose items pass, and the handler
+  // then calls string methods on it.
+  body('organisationName').isString().withMessage('Organisation name is required and must be less than 200 characters').bail()
+    .trim().isLength({ min: 1, max: 200 }).withMessage('Organisation name is required and must be less than 200 characters'),
+  body('adminEmail').isString().withMessage('Valid email required').bail()
+    .isEmail({ allow_display_name: false, require_tld: false }).withMessage('Valid email required'),
+  body('adminPassword').isString().withMessage('Use at least 12 characters.').bail()
+    .isLength({ min: 12 }).withMessage('Use at least 12 characters.')
 ], handleValidationErrors, async (req, res, next) => {
   // Only allow setup if no users exist
   db.get("SELECT COUNT(*) as count FROM users", [], async (err, row) => {
@@ -1241,6 +1246,9 @@ app.post('/api/setup/initialize', apiLimiter, csrfProtection, requireSetupToken,
   });
 });
 
+// Cost 10 matches every stored hash, so comparing against it takes as long as a real check.
+const DUMMY_PASSWORD_HASH = bcrypt.hashSync(require('crypto').randomBytes(16).toString('hex'), 10);
+
 // Login
 app.post('/api/login', loginLimiter, [
   body('email').custom((value) => {
@@ -1250,37 +1258,28 @@ app.post('/api/login', loginLimiter, [
     }
     throw new Error('Valid email required');
   }),
-  body('password').notEmpty().withMessage('Password is required')
+  // bcrypt rejects a non-string, so a number or array password must stop here as a 400.
+  body('password').isString().withMessage('Password is required').bail().notEmpty().withMessage('Password is required')
 ], handleValidationErrors, async (req, res, next) => {
   try {
     const { email, password } = req.body;
-    
-    // Look up user by email
-    db.get("SELECT id, email, password_hash, organisation_id, role, session_version FROM users WHERE email = ?", [email.toLowerCase()], async (err, user) => {
-      if (err) {
-        return next(err);
-      }
-      
-      // If no user found, return error
-      if (!user) {
-        return res.status(401).json({ error: 'Invalid email or password' });
-      }
+    const user = await dbGet("SELECT id, email, password_hash, organisation_id, role, session_version FROM users WHERE email = ?", [email.toLowerCase()]);
 
-      // Verify password
-      const passwordMatch = await bcrypt.compare(password, user.password_hash);
-      if (!passwordMatch) {
-        return res.status(401).json({ error: 'Invalid email or password' });
-      }
-      
-      setAuthCookie(res, signSession({
-        userId: user.id,
-        organisationId: user.organisation_id,
-        role: user.role,
-        sessionVersion: user.session_version
-      }));
-      
-      res.json({ success: true });
-    });
+    // An unknown email pays the same bcrypt cost, so the response time does not show which
+    // address is the admin login.
+    const passwordMatch = await bcrypt.compare(password, user ? user.password_hash : DUMMY_PASSWORD_HASH);
+    if (!user || !passwordMatch) {
+      return res.status(401).json({ error: 'Invalid email or password' });
+    }
+
+    setAuthCookie(res, signSession({
+      userId: user.id,
+      organisationId: user.organisation_id,
+      role: user.role,
+      sessionVersion: user.session_version
+    }));
+
+    res.json({ success: true });
   } catch (err) {
     next(err);
   }
@@ -2719,8 +2718,8 @@ app.get('/api/admin/users', requireAuth, requireRole('owner'), apiLimiter, (req,
 
 // POST Create User (Manual creation by owner)
 app.post('/api/admin/users', requireAuth, requireRole('owner'), apiLimiter, csrfProtection, [
-  body('email').isEmail({ allow_display_name: false, require_tld: false }).withMessage('Valid email required'),
-  body('password').isLength({ min: 8 }).withMessage('Password must be at least 8 characters'),
+  body('email').isString().withMessage('Valid email required').bail().isEmail({ allow_display_name: false, require_tld: false }).withMessage('Valid email required'),
+  body('password').isString().withMessage('Password must be at least 8 characters').bail().isLength({ min: 8 }).withMessage('Password must be at least 8 characters'),
   body('role').isIn(['owner', 'member']).withMessage('Role must be owner or member')
 ], handleValidationErrors, async (req, res, next) => {
   if (!req.user.organisationId) {
@@ -3094,7 +3093,7 @@ app.get('/api/invitations/:token', publicReadLimiter, [
 // POST Accept Invitation
 app.post('/api/invitations/:token/accept', publicReadLimiter, [
   param('token').isLength({ min: 64, max: 64 }).withMessage('Invalid invitation token'),
-  body('password').isLength({ min: 8 }).withMessage('Password must be at least 8 characters')
+  body('password').isString().withMessage('Password must be at least 8 characters').bail().isLength({ min: 8 }).withMessage('Password must be at least 8 characters')
 ], handleValidationErrors, async (req, res, next) => {
   const { token } = req.params;
   const { password } = req.body;
@@ -3367,175 +3366,153 @@ app.post('/api/admin/invitations/:invitationId/retry', requireAuth, requireRole(
 
 // POST Forgot Password (Request password reset)
 app.post('/api/auth/forgot-password', apiLimiter, [
-  body('email').isEmail().withMessage('Valid email required')
+  // isString first: isEmail passes an array of addresses, and toLowerCase on it would throw.
+  body('email').isString().withMessage('Valid email required').bail().isEmail().withMessage('Valid email required')
 ], handleValidationErrors, async (req, res, next) => {
-  const { email } = req.body;
-  const emailLower = email.toLowerCase();
-  
-  // Find user by email
-  db.get("SELECT id, email FROM users WHERE email = ?", [emailLower], async (err, user) => {
-    if (err) return next(err);
-    
+  const message = 'If an account exists with this email, a password reset link has been sent';
+  try {
+    const emailLower = req.body.email.toLowerCase();
+    const user = await dbGet("SELECT id, email FROM users WHERE email = ?", [emailLower]);
+
     // Always return success (don't reveal if email exists)
     if (!user) {
-      return res.json({ success: true, message: 'If an account exists with this email, a password reset link has been sent' });
+      return res.json({ success: true, message });
     }
-    
+
     // Generate secure token
     const token = require('crypto').randomBytes(32).toString('hex');
     const tokenId = require('crypto').randomUUID();
     const expiresAt = new Date();
     expiresAt.setHours(expiresAt.getHours() + 1); // 1 hour expiry
-    
+
     // Delete any existing unused tokens for this user
-    db.run("DELETE FROM password_reset_tokens WHERE user_id = ? AND used_at IS NULL", [user.id], (err) => {
-      if (err) {
-        console.error('Error deleting old tokens:', err);
-        // Continue anyway
-      }
-      
-      // Create password reset token
-      db.run(
-        "INSERT INTO password_reset_tokens (id, user_id, token, expires_at) VALUES (?, ?, ?, ?)",
-        [tokenId, user.id, token, expiresAt.toISOString()],
-        async (err) => {
-          if (err) return next(err);
-          
-          // Send password reset email
-          const resetUrl = `${APP_URL}/reset-password/${token}`;
-          const emailHtml = renderEmail({
-            heading: 'Reset your password.',
-            paragraph: 'A password reset was requested for this email on the donatelli.tech admin.',
-            action: { href: resetUrl, label: 'Set new password' },
-            footnote: 'The link expires in 1 hour. If you did not request it, ignore this email; your password stays the same.'
-          });
-          const emailText = `A password reset was requested for this email on the donatelli.tech admin. Set a new password at ${resetUrl}. The link expires in 1 hour. If you did not request it, ignore this email; your password stays the same.`;
-          
-          try {
-            if (emailTransporter) {
-              await emailTransporter.sendMail({
-                from: SMTP_FROM,
-                to: emailLower,
-                subject: 'Reset your donatelli.tech admin password',
-                text: emailText,
-                html: emailHtml
-              });
-            }
-          } catch (emailErr) {
-            console.error('Failed to send password reset email:', emailErr);
-            // Don't fail the request if email fails
-          }
-          
-          res.json({ success: true, message: 'If an account exists with this email, a password reset link has been sent' });
-        }
-      );
-    });
-  });
+    try {
+      await dbRun("DELETE FROM password_reset_tokens WHERE user_id = ? AND used_at IS NULL", [user.id]);
+    } catch (err) {
+      console.error('Error deleting old tokens:', err);
+      // Continue anyway
+    }
+
+    await dbRun(
+      "INSERT INTO password_reset_tokens (id, user_id, token, expires_at) VALUES (?, ?, ?, ?)",
+      [tokenId, user.id, token, expiresAt.toISOString()]
+    );
+
+    // Answer before the SMTP round trip, so a known address does not respond slower than an
+    // unknown one.
+    res.json({ success: true, message });
+
+    if (emailTransporter) {
+      const resetUrl = `${APP_URL}/reset-password/${token}`;
+      const emailHtml = renderEmail({
+        heading: 'Reset your password.',
+        paragraph: 'A password reset was requested for this email on the donatelli.tech admin.',
+        action: { href: resetUrl, label: 'Set new password' },
+        footnote: 'The link expires in 1 hour. If you did not request it, ignore this email; your password stays the same.'
+      });
+      const emailText = `A password reset was requested for this email on the donatelli.tech admin. Set a new password at ${resetUrl}. The link expires in 1 hour. If you did not request it, ignore this email; your password stays the same.`;
+      // Not awaited, so the catch is what keeps a failed send from becoming an unhandled rejection.
+      Promise.resolve()
+        .then(() => emailTransporter.sendMail({
+          from: SMTP_FROM,
+          to: emailLower,
+          subject: 'Reset your donatelli.tech admin password',
+          text: emailText,
+          html: emailHtml
+        }))
+        .catch((emailErr) => console.error('Failed to send password reset email:', emailErr));
+    }
+  } catch (err) {
+    if (!res.headersSent) next(err);
+    else console.error('Password reset request failed after the response:', err);
+  }
 });
 
 // POST Reset Password (with token)
 app.post('/api/auth/reset-password', apiLimiter, [
-  body('token').isLength({ min: 64, max: 64 }).withMessage('Invalid reset token'),
-  body('password').isLength({ min: 12 }).withMessage('Use at least 12 characters.')
+  body('token').isString().withMessage('Invalid reset token').bail().isLength({ min: 64, max: 64 }).withMessage('Invalid reset token'),
+  // isLength alone passes an object ("[object Object]" is 15 characters); bcrypt then rejects it.
+  body('password').isString().withMessage('Use at least 12 characters.').bail().isLength({ min: 12 }).withMessage('Use at least 12 characters.')
 ], handleValidationErrors, async (req, res, next) => {
   const { token, password } = req.body;
-  
-  // Get reset token
-  db.get(
-    "SELECT prt.*, u.id as user_id, u.organisation_id FROM password_reset_tokens prt JOIN users u ON prt.user_id = u.id WHERE prt.token = ?",
-    [token],
-    async (err, resetToken) => {
-      if (err) return next(err);
-      if (!resetToken) {
-        return res.status(400).json({ error: 'Invalid or expired reset token' });
-      }
-      if (resetToken.used_at) {
-        return res.status(400).json({ error: 'This reset token has already been used' });
-      }
-      if (new Date(resetToken.expires_at) < new Date()) {
-        return res.status(400).json({ error: 'Reset token has expired' });
-      }
-      
-      // Hash new password
-      const passwordHash = await bcrypt.hash(password, 10);
-      
-      // Update user password; bumping session_version signs out every existing session
-      db.run(
-        "UPDATE users SET password_hash = ?, session_version = session_version + 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-        [passwordHash, resetToken.user_id],
-        (err) => {
-          if (err) return next(err);
-          
-          // Mark token as used
-          db.run(
-            "UPDATE password_reset_tokens SET used_at = CURRENT_TIMESTAMP WHERE id = ?",
-            [resetToken.id],
-            async (err) => {
-              if (err) {
-                console.error('Failed to mark token as used:', err);
-                // Don't fail the request
-              }
-              
-              try {
-                await logAudit('password_reset', 'auth', resetToken.user_id, {}, resetToken.user_id, resetToken.organisation_id);
-              } catch (auditErr) {
-                return next(auditErr);
-              }
-              res.json({ success: true, message: 'Password has been reset successfully' });
-            }
-          );
-        }
-      );
+  try {
+    const resetToken = await dbGet(
+      "SELECT prt.*, u.id as user_id, u.organisation_id FROM password_reset_tokens prt JOIN users u ON prt.user_id = u.id WHERE prt.token = ?",
+      [token]
+    );
+    if (!resetToken) {
+      return res.status(400).json({ error: 'Invalid or expired reset token' });
     }
-  );
+    if (resetToken.used_at) {
+      return res.status(400).json({ error: 'This reset token has already been used' });
+    }
+    if (new Date(resetToken.expires_at) < new Date()) {
+      return res.status(400).json({ error: 'Reset token has expired' });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 10);
+
+    // Update user password; bumping session_version signs out every existing session
+    await dbRun(
+      "UPDATE users SET password_hash = ?, session_version = session_version + 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+      [passwordHash, resetToken.user_id]
+    );
+
+    try {
+      await dbRun("UPDATE password_reset_tokens SET used_at = CURRENT_TIMESTAMP WHERE id = ?", [resetToken.id]);
+    } catch (err) {
+      console.error('Failed to mark token as used:', err);
+      // Don't fail the request
+    }
+
+    await logAudit('password_reset', 'auth', resetToken.user_id, {}, resetToken.user_id, resetToken.organisation_id);
+    res.json({ success: true, message: 'Password has been reset successfully' });
+  } catch (err) {
+    next(err);
+  }
 });
 
 // POST Change Password (when logged in)
 app.post('/api/auth/change-password', requireAuth, apiLimiter, csrfProtection, [
-  body('currentPassword').notEmpty().withMessage('Current password is required'),
-  body('newPassword').isLength({ min: 12 }).withMessage('Use at least 12 characters.')
+  body('currentPassword').isString().withMessage('Current password is required').bail().notEmpty().withMessage('Current password is required'),
+  body('newPassword').isString().withMessage('Use at least 12 characters.').bail().isLength({ min: 12 }).withMessage('Use at least 12 characters.')
 ], handleValidationErrors, async (req, res, next) => {
   if (!req.user.id) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
-  
+
   const { currentPassword, newPassword } = req.body;
-  
-  // Get user
-  db.get("SELECT password_hash FROM users WHERE id = ?", [req.user.id], async (err, user) => {
-    if (err) return next(err);
+
+  try {
+    const user = await dbGet("SELECT password_hash FROM users WHERE id = ?", [req.user.id]);
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
-    
-    // Verify current password
+
     const passwordMatch = await bcrypt.compare(currentPassword, user.password_hash);
     if (!passwordMatch) {
       return res.status(401).json({ error: 'Current password is incorrect' });
     }
-    
-    // Hash new password
+
     const passwordHash = await bcrypt.hash(newPassword, 10);
-    
-    try {
-      // The bump signs out every other session; this one gets a fresh cookie below.
-      await dbRun(
-        "UPDATE users SET password_hash = ?, session_version = session_version + 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-        [passwordHash, req.user.id]
-      );
-      const { session_version: sessionVersion } = await dbGet('SELECT session_version FROM users WHERE id = ?', [req.user.id]);
-      setAuthCookie(res, signSession({
-        userId: req.user.id,
-        organisationId: req.user.organisationId,
-        role: req.user.role,
-        sessionVersion
-      }));
-      await logAudit('password_changed', 'auth', req.user.id, {}, req.user.id, req.user.organisationId);
-      res.json({ success: true, message: 'Password has been changed successfully' });
-    } catch (err) {
-      next(err);
-    }
-  });
+
+    // The bump signs out every other session; this one gets a fresh cookie below.
+    await dbRun(
+      "UPDATE users SET password_hash = ?, session_version = session_version + 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+      [passwordHash, req.user.id]
+    );
+    const { session_version: sessionVersion } = await dbGet('SELECT session_version FROM users WHERE id = ?', [req.user.id]);
+    setAuthCookie(res, signSession({
+      userId: req.user.id,
+      organisationId: req.user.organisationId,
+      role: req.user.role,
+      sessionVersion
+    }));
+    await logAudit('password_changed', 'auth', req.user.id, {}, req.user.id, req.user.organisationId);
+    res.json({ success: true, message: 'Password has been changed successfully' });
+  } catch (err) {
+    next(err);
+  }
 });
 
 // --- EMAIL VERIFICATION ENDPOINTS ---
