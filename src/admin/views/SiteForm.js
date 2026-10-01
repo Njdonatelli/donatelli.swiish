@@ -167,27 +167,34 @@ function ObjectList({ path, node, meta, value, errors, onChange }) {
       <legend>{meta.title || path}</legend>
       {meta.description ? <p className="field-hint">{meta.description}</p> : null}
       {items.length === 0 ? <p className="field-hint">None yet.</p> : null}
-      {items.map((item, i) => (
-        <div className="stack-sm" key={i}>
-          <div className="split">
-            <span className="eyebrow">{cap(noun)} {i + 1}</span>
-            <Button variant="quiet" icon={X} onClick={() => onChange(path, items.filter((_, j) => j !== i))}>
-              Remove {noun} {i + 1}
-            </Button>
+      {items.map((item, i) => {
+        const itemName = cap(noun) + ' ' + (i + 1);
+        const nameId = idFor(path + '.' + i) + '-name';
+        // Every item has the same property titles ("Label", "Link"), so each input's name carries the item
+        // number too, for a screen reader's form list and for the error announced on the field.
+        return (
+          <div className="stack-sm" key={i} role="group" aria-labelledby={nameId}>
+            <div className="split">
+              <span className="eyebrow" id={nameId}>{itemName}</span>
+              <Button variant="quiet" icon={X} onClick={() => onChange(path, items.filter((_, j) => j !== i))}>
+                Remove {noun} {i + 1}
+              </Button>
+            </div>
+            {keys.map((k) => (
+              <ScalarInput
+                key={k}
+                path={path + '.' + i + '.' + k}
+                node={props[k]}
+                meta={{ title: props[k].title || k }}
+                label={<><span className="sr-only">{itemName}, </span>{props[k].title || k}</>}
+                value={item ? item[k] : ''}
+                error={errorAt(errors, path + '.' + i + '.' + k) || errorAt(errors, path + '.' + i)}
+                onChange={(v) => onChange(path, items.map((x, j) => (j === i ? { ...x, [k]: v == null ? '' : v } : x)))}
+              />
+            ))}
           </div>
-          {keys.map((k) => (
-            <ScalarInput
-              key={k}
-              path={path + '.' + i + '.' + k}
-              node={props[k]}
-              meta={{ title: props[k].title || k }}
-              value={item ? item[k] : ''}
-              error={errorAt(errors, path + '.' + i + '.' + k) || errorAt(errors, path + '.' + i)}
-              onChange={(v) => onChange(path, items.map((x, j) => (j === i ? { ...x, [k]: v == null ? '' : v } : x)))}
-            />
-          ))}
-        </div>
-      ))}
+        );
+      })}
       {errorAt(errors, path) ? <p className="field-error">{errorAt(errors, path)}</p> : null}
       <div>
         <Button variant="secondary" icon={Plus} disabled={items.length >= max} onClick={() => onChange(path, [...items, blank])}>
