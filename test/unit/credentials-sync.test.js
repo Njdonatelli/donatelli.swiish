@@ -109,6 +109,34 @@ test('a public email off the site domain is synced but shows as pending, keeping
   assert.equal(JSON.parse(onDomain.text).entries.contact_email.date, TODAY);
 });
 
+// Only git can edit the registry, so a pending status the sync set must not outlive the address that caused it.
+test('a public email back on the site domain after an off-domain one is verified again', () => {
+  const sync = (text, contactEmail) => syncCredentials(text, siteWith((s) => { s.contactEmail = contactEmail; }), TODAY).text;
+  const before = JSON.parse(TEXT).entries.contact_email;
+
+  let text = sync(TEXT, 'nick.donatelli@gmail.com');
+  text = sync(text, 'nick@elsewhere.example');
+  const back = JSON.parse(sync(text, 'hello@donatelli.tech')).entries.contact_email;
+  assert.equal(back.value, 'hello@donatelli.tech');
+  assert.equal(back.status, 'verified');
+  assert.equal(back.date, TODAY);
+  assert.deepEqual(Object.keys(back), Object.keys(before), 'no sync bookkeeping is left in the entry');
+
+  // Cleared in between, the address still returns as verified.
+  const cleared = sync(sync(TEXT, 'nick.donatelli@gmail.com'), null);
+  assert.equal(JSON.parse(sync(cleared, 'hello@donatelli.tech')).entries.contact_email.status, 'verified');
+});
+
+test('a pending contact email the owner set stays pending through an off-domain round trip', () => {
+  const owned = JSON.parse(TEXT);
+  owned.entries.contact_email.status = 'pending';
+  const sync = (text, contactEmail) => syncCredentials(text, siteWith((s) => { s.contactEmail = contactEmail; }), TODAY).text;
+  const text = sync(sync(JSON.stringify(owned, null, 2) + '\n', 'nick.donatelli@gmail.com'), 'hello@donatelli.tech');
+  const entry = JSON.parse(text).entries.contact_email;
+  assert.equal(entry.status, 'pending');
+  assert.deepEqual(Object.keys(entry), Object.keys(owned.entries.contact_email));
+});
+
 test('the first LinkedIn profile link wins; other links are ignored', () => {
   const site = siteWith((s) => {
     s.ownerSameAs = ['https://www.linkedin.com/company/example', 'https://www.linkedin.com/in/second/', 'https://www.linkedin.com/in/third/'];
