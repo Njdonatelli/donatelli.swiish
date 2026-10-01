@@ -170,7 +170,7 @@ and keep `.env` at mode 600.
 | `CONNECT_DAILY_CAP` | `200` | Connections accepted per UTC day |
 | `CONNECT_NOTIFY_EMAIL` | unset | Optional recipient of the new-connection email, which carries no visitor details |
 | `BACKUP_INTERVAL_HOURS` | `0` (off) | Hours between in-process backups, up to 576 |
-| `BACKUP_KEEP` | `14` | Backup files kept |
+| `BACKUP_KEEP` | `14` | Backup files kept, by the timer and by the manual backup command |
 
 In production the server refuses to start, and lists every problem at once, when `JWT_SECRET`
 is shorter than 32 characters or is the placeholder, `DEMO_MODE` is `true`, `APP_URL` is
@@ -202,7 +202,9 @@ Take a backup now (Bash on the host):
 docker compose exec swiish node scripts/backup-db.js
 ```
 
-Expected output: `Backup written: data/backups/cards-<UTC time>.db (keeping 14, removed 0 older).`
+Expected output: `Backup written: data/backups/cards-<UTC time>.db (keeping <BACKUP_KEEP>, removed 0 older).`, where
+`<BACKUP_KEEP>` is the value in `.env`, or 14 when it is empty. The manual backup rotates to the same number as the
+timer; `--keep N` overrides it for one run.
 
 What the owner must know:
 

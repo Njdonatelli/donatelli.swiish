@@ -50,3 +50,49 @@ test('runBackup refuses a bad keep and a missing database', async () => {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('parseKeep: --keep wins, else BACKUP_KEEP, else 14; a bad value names its source', () => {
+  const { parseKeep } = require('../../scripts/backup-db');
+  assert.equal(parseKeep([], {}), 14);
+  assert.equal(parseKeep([], { BACKUP_KEEP: '' }), 14, 'compose env_file writes KEY= for an unset value');
+  assert.equal(parseKeep([], { BACKUP_KEEP: ' 30 ' }), 30);
+  assert.equal(parseKeep(['--keep', '3'], { BACKUP_KEEP: '30' }), 3);
+  assert.throws(() => parseKeep([], { BACKUP_KEEP: 'many' }), /^Error: BACKUP_KEEP is "many"/);
+  assert.throws(() => parseKeep([], { BACKUP_KEEP: '0' }), /BACKUP_KEEP is "0"/);
+  assert.throws(() => parseKeep(['--keep', 'x'], {}), /^Error: --keep is "x"/);
+  assert.throws(() => parseKeep(['--keep', '1001'], {}), /--keep is "1001"/);
+});
+
+test('the manual backup keeps BACKUP_KEEP files, not 14', async (t) => {
+  const { spawnSync } = require('child_process');
+  const source = await createTestDb();
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dt-backup-cli-'));
+  t.after(async () => {
+    await source.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+  fs.mkdirSync(path.join(root, 'scripts'));
+  fs.copyFileSync(path.join(__dirname, '..', '..', 'scripts', 'backup-db.js'), path.join(root, 'scripts', 'backup-db.js'));
+  fs.symlinkSync(path.join(__dirname, '..', '..', 'node_modules'), path.join(root, 'node_modules'), 'dir');
+  fs.mkdirSync(path.join(root, 'data', 'backups'), { recursive: true });
+  fs.copyFileSync(source.file, path.join(root, 'data', 'cards.db'));
+  for (let day = 1; day <= 17; day++) {
+    fs.copyFileSync(source.file, path.join(root, 'data', 'backups', `cards-202609${String(day).padStart(2, '0')}T000000Z.db`));
+  }
+  const run = spawnSync(process.execPath, ['scripts/backup-db.js'], { cwd: root, env: { PATH: process.env.PATH, BACKUP_KEEP: '30' }, encoding: 'utf8' });
+  assert.equal(run.status, 0, run.stderr);
+  assert.match(run.stdout, /\(keeping 30, removed 0 older\)\.$/m);
+  assert.equal(fs.readdirSync(path.join(root, 'data', 'backups')).length, 18);
+});
+
+test('backups are readable by their owner only', { skip: process.platform === 'win32' ? 'POSIX modes only' : false }, async (t) => {
+  const source = await createTestDb();
+  const dir = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'dt-backup-mode-')), 'backups');
+  t.after(async () => {
+    await source.close();
+    fs.rmSync(path.dirname(dir), { recursive: true, force: true });
+  });
+  const { file } = await runBackup({ dbFile: source.file, dir, keep: 2 });
+  assert.equal(fs.statSync(dir).mode & 0o077, 0, 'the backups folder');
+  assert.equal(fs.statSync(file).mode & 0o077, 0, 'the backup file');
+});

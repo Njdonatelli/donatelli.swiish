@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 // Consistent SQLite snapshots with VACUUM INTO, safe to run while the server is up.
-// Usage: node scripts/backup-db.js [--keep 14]
+// Usage: node scripts/backup-db.js [--keep N]   (default: BACKUP_KEEP, else 14)
 // Deleted connections survive in these files until they rotate out, which the owner
 // runbook (docs/donatelli-deploy.md) states.
 
@@ -26,7 +26,9 @@ async function runBackup({ dbFile, dir, keep = 14, now = new Date() }) {
   if (!fs.existsSync(dbFile)) {
     throw new Error(`No database at ${dbFile}. Start the server once so it creates the database, then run the backup.`);
   }
-  fs.mkdirSync(dir, { recursive: true });
+  // Every backup holds the visitors' details: readable by the server's own user only.
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  fs.chmodSync(dir, 0o700);
   const file = path.join(dir, `cards-${stamp(now)}.db`);
 
   const db = await new Promise((resolve, reject) => {
@@ -37,6 +39,7 @@ async function runBackup({ dbFile, dir, keep = 14, now = new Date() }) {
   } finally {
     await new Promise((resolve) => db.close(() => resolve()));
   }
+  fs.chmodSync(file, 0o600);
 
   // The UTC stamp sorts lexically in time order, so the oldest files come first.
   const backups = fs.readdirSync(dir).filter((name) => BACKUP_NAME.test(name)).sort();
@@ -46,12 +49,24 @@ async function runBackup({ dbFile, dir, keep = 14, now = new Date() }) {
   return { file, removed };
 }
 
-function parseKeep(argv) {
+// --keep wins; otherwise BACKUP_KEEP, which the server's timer also uses, so a manual backup never
+// deletes files the owner chose to keep. Read from the environment directly rather than through
+// lib/config, whose full production check would stop a backup over an unrelated setting.
+function parseKeep(argv, env = process.env) {
   const i = argv.indexOf('--keep');
-  if (i === -1) return 14;
-  const value = Number(argv[i + 1]);
-  if (!Number.isInteger(value) || value < 1) {
-    throw new Error(`--keep is "${argv[i + 1] ?? ''}". Use a whole number of 1 or more, such as --keep 14.`);
+  if (i !== -1) {
+    const value = Number(argv[i + 1]);
+    if (!Number.isInteger(value) || value < 1 || value > 1000) {
+      throw new Error(`--keep is "${argv[i + 1] ?? ''}". Use a whole number from 1 to 1000, such as --keep 14.`);
+    }
+    return value;
+  }
+  // Compose's env_file turns "BACKUP_KEEP=" into an empty string, which means unset.
+  const raw = env.BACKUP_KEEP == null ? '' : String(env.BACKUP_KEEP).trim();
+  if (raw === '') return 14;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < 1 || value > 1000) {
+    throw new Error(`BACKUP_KEEP is "${raw}". Use a whole number from 1 to 1000, or remove it to keep 14.`);
   }
   return value;
 }
@@ -59,6 +74,8 @@ function parseKeep(argv) {
 if (require.main === module) {
   (async () => {
     const root = path.join(__dirname, '..');
+    // As server.js does: a run on the host reads the same .env; an existing variable is never overridden.
+    require('dotenv').config({ path: path.join(root, '.env') });
     const keep = parseKeep(process.argv.slice(2));
     const { file, removed } = await runBackup({
       dbFile: path.join(root, 'data', 'cards.db'),
@@ -72,4 +89,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { runBackup };
+module.exports = { runBackup, parseKeep };
