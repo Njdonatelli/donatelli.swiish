@@ -22,14 +22,32 @@ export default function DraftNotes({ draft, status }) {
       </Callout>
     );
   }
-  const behind = draft.site && draft.site.draft && draft.baseSha && draft.mainSha && draft.baseSha !== draft.mainSha;
+  const stored = draft.site && draft.site.draft;
+  const behind = stored && draft.baseSha && draft.mainSha && draft.baseSha !== draft.mainSha;
+  // The server moved a draft that clashes with nothing onto main as it loaded it.
+  const rebased = stored && stored.rebasedFrom && !behind;
   return (
     <>
       {behind ? (
         <Callout tone="warn">
+          {stored.conflicts && stored.conflicts.length ? (
+            <p>
+              donatelli.tech changed since this draft (commit {shortSha(draft.mainSha)}), in fields this draft also
+              changes. Building a preview loads that change into those fields and keeps your other edits.
+            </p>
+          ) : (
+            <p>
+              donatelli.tech changed since this draft (commit {shortSha(draft.mainSha)}). Building a preview keeps your
+              changes when they touch different fields.
+            </p>
+          )}
+        </Callout>
+      ) : null}
+      {rebased ? (
+        <Callout tone="info">
           <p>
-            donatelli.tech changed since this draft (commit {shortSha(draft.mainSha)}). Building a preview keeps your
-            changes when they touch different fields.
+            donatelli.tech changed since this draft started (commit {shortSha(draft.mainSha)}). The draft now includes
+            that change, and Changes lists only your own edits.
           </p>
         </Callout>
       ) : null}

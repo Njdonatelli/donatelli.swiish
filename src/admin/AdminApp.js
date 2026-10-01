@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-route
 import { createApi } from './api';
 import { SessionProvider, useSession } from './session';
 import { SiteStatusProvider } from './hooks/useSiteStatus';
+import { DraftProvider } from './hooks/useDraft';
 import Shell from './Shell';
 import LoginView from './views/LoginView';
 import SetupView from './views/SetupView';
@@ -35,7 +36,9 @@ function RequireOwner({ api }) {
   }
   return (
     <SiteStatusProvider api={api}>
-      <Shell />
+      <DraftProvider api={api}>
+        <Shell />
+      </DraftProvider>
     </SiteStatusProvider>
   );
 }

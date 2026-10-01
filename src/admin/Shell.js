@@ -5,6 +5,7 @@ import Icon, { Globe, IdCard, LayoutDashboard, LogOut, User, Users } from './ui/
 import StatusPill from './StatusPill';
 import Callout from './ui/Callout';
 import useSiteStatus from './hooks/useSiteStatus';
+import { useDraftFlush } from './hooks/useDraft';
 import { useSession } from './session';
 
 const TABS = [
@@ -79,7 +80,10 @@ export default function Shell() {
     window.scrollTo(0, 0);
   }, [location.pathname]);
 
+  const flushDraft = useDraftFlush();
   const logout = async () => {
+    // The session cookie goes with logout, so an edit still waiting to autosave is sent first.
+    if (flushDraft) await flushDraft();
     await session.logout();
     navigate('/login', { replace: true });
   };

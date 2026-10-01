@@ -1,6 +1,6 @@
 import React from 'react';
 
-function titleFor(path, titles) {
+export function titleFor(path, titles) {
   if (titles[path]) return titles[path];
   // card.links.0.url → the list's title plus the item number.
   const m = /^(.*)\.(\d+)(?:\.(\w+))?$/.exec(path);

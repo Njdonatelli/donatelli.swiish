@@ -3,7 +3,8 @@
 // runtime helpers: a helper import would turn this file into an ES module and break module.exports.
 
 // Whether the preview on admin-preview is the one this draft (or a restore) produced, so Publish ships what
-// the owner is looking at. Publish also drops the draft, so a preview of other changes must not match.
+// the owner is looking at. A preview of anything else must not match a draft with changes of its own: the
+// form would show one thing and Publish ship another. That holds for a restore too.
 //   record      what this browser stored when it last built one: {commitSha, kind:'draft'|'restore', key}
 //   configKey   the draft as it is in this browser now
 //   draft       the server's draft as loaded: {previewSha, key}; previewSha is the preview built from it,
@@ -16,7 +17,7 @@ function previewMatches(opts) {
   if (!head) return false;
   var record = opts.record;
   if (record && record.commitSha === head) {
-    return record.kind === 'restore' || record.key === opts.configKey;
+    return record.kind === 'restore' ? !opts.hasChanges : record.key === opts.configKey;
   }
   var draft = opts.draft;
   if (draft && draft.previewSha === head) return draft.key === opts.configKey;

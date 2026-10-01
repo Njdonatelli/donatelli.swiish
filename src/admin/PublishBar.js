@@ -48,7 +48,11 @@ export default function PublishBar({ status, draft, onBuildPreview, onPublish, o
     );
   } else if (count > 0) {
     label = pluralize(count, 'change', 'changes') + '.';
-    detail = matches ? null : 'Build a preview to check them before publishing.';
+    if (draft && draft.restoreBlocked && draft.restoreBlocked(status)) {
+      detail = 'The preview holds a restore, not this draft. Discard the draft to publish the restore, or build a preview of the draft.';
+    } else {
+      detail = matches ? null : 'Build a preview to check them before publishing.';
+    }
     actions = <Button variant="primary" onClick={onBuildPreview}>Build preview</Button>;
   } else {
     label = 'No changes.';

@@ -14,7 +14,14 @@ test('no preview on admin-preview matches nothing', () => {
 test("this browser's own preview matches while the draft is unchanged since it was built", () => {
   assert.equal(match({ record: { commitSha: 'a1', kind: 'draft', key: 'k' }, status: status('a1', true) }), true);
   assert.equal(match({ record: { commitSha: 'a1', kind: 'draft', key: 'k' }, configKey: 'k2', status: status('a1', true) }), false);
-  assert.equal(match({ record: { commitSha: 'a1', kind: 'restore', key: null }, configKey: 'k2', status: status('a1', false) }), true);
+});
+
+// The Card tab would show the draft while Publish shipped the restore.
+test("this browser's restore matches only while the draft has no changes of its own", () => {
+  const record = { commitSha: 'a1', kind: 'restore', key: null };
+  assert.equal(match({ record, configKey: 'k2', status: status('a1', true) }), false);
+  assert.equal(match({ record, configKey: 'k2', hasChanges: false, status: status('a1', true) }), true);
+  assert.equal(match({ record, configKey: 'k2', hasChanges: false, status: status('a1', false) }), true, 'building or failed restores still match');
 });
 
 // The phone built the preview from the shared draft; the laptop never did, or built an older one.

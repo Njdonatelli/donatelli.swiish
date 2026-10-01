@@ -299,6 +299,12 @@ export default function WebsiteView({ api }) {
                   <ChangesTable changes={plan.changes} fields={allFields(site.schema, site.fields)} draftLabel="Restored" />
                 </>
               ) : null}
+              {draft.changes && draft.changes.length ? (
+                <p>
+                  Your draft ({draft.changes.length === 1 ? '1 change' : draft.changes.length + ' changes'}) is not in this
+                  preview. To publish the restore, discard the draft first; or keep editing and build a preview of the draft.
+                </p>
+              ) : null}
             </>
           ) : null
         }

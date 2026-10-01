@@ -58,7 +58,9 @@ export function createApi({ base = '/api', fetch = window.fetch.bind(window) } =
     return csrfToken;
   }
 
-  async function send(method, path, body, { raw = false, retried = false } = {}) {
+  // keepalive lets a save outlive the page (pagehide). With a token already cached, the request starts
+  // before this function first awaits, so it is sent even as the page goes away.
+  async function send(method, path, body, { raw = false, retried = false, keepalive = false } = {}) {
     const headers = { Accept: raw ? '*/*' : 'application/json' };
     if (body !== undefined) headers['Content-Type'] = 'application/json';
     if (method !== 'GET') headers['X-CSRF-Token'] = csrfToken || (await refreshCsrf());
@@ -70,6 +72,7 @@ export function createApi({ base = '/api', fetch = window.fetch.bind(window) } =
         body: body === undefined ? undefined : JSON.stringify(body),
         credentials: 'same-origin',
         cache: 'no-store',
+        keepalive,
       });
     } catch (e) {
       throw new ApiError({ status: 0, code: 'NETWORK', message: NETWORK_MESSAGE });
@@ -80,7 +83,7 @@ export function createApi({ base = '/api', fetch = window.fetch.bind(window) } =
 
     if (res.status === 403 && data && data.code === 'CSRF' && !retried) {
       await refreshCsrf();
-      return send(method, path, body, { raw, retried: true });
+      return send(method, path, body, { raw, retried: true, keepalive });
     }
     // A 401 on an owner route means the session ended (expired, revoked, or signed out elsewhere).
     if (res.status === 401 && path.indexOf('/admin/') === 0) {
@@ -114,7 +117,7 @@ export function createApi({ base = '/api', fetch = window.fetch.bind(window) } =
 
   return {
     get: (path) => send('GET', path),
-    post: (path, body) => send('POST', path, body === undefined ? {} : body),
+    post: (path, body, opts) => send('POST', path, body === undefined ? {} : body, opts),
     del: (path) => send('DELETE', path),
     download,
     refreshCsrf,
