@@ -20,8 +20,8 @@ first real deploy.
   log) and `backups/`. Everything else in the container is disposable.
 - **Exactly one TLS reverse-proxy hop** in front of the container (Caddy, nginx, or a
   Cloudflare Tunnel with no inbound ports). The server trusts one `X-Forwarded-For` hop, and
-  the login limiter keys on that address. Compose publishes the port on `127.0.0.1:8095` only,
-  so the proxy must run on the same host.
+  the login limiter keys on that address: one IPv4 address, or one IPv6 /56 network. Compose
+  publishes the port on `127.0.0.1:8095` only, so the proxy must run on the same host.
 - **[VERIFY]** After the first deploy, confirm the server sees each visitor's own address (see
   "Check the proxy hop" below).
 
@@ -125,8 +125,8 @@ repository is cloned.
 
 ### Check the proxy hop
 
-[VERIFY] The login limiter allows 5 attempts per 15 minutes per visitor address. To confirm
-the server sees real visitor addresses rather than the proxy's:
+[VERIFY] The login limiter allows 5 attempts per 15 minutes per IPv4 address or IPv6 /56
+network. To confirm the server sees real visitor addresses rather than the proxy's:
 
 1. On a phone using mobile data (not your Wi-Fi), open the admin login and enter a wrong
    password 6 times. The 6th attempt shows `Too many attempts from this network. Try again at …`.

@@ -504,6 +504,17 @@ describe('a production server without SETUP_TOKEN', () => {
     assert.deepEqual(res.json, { code: 'SETUP_LOCKED', error: 'Setup is locked. Set SETUP_TOKEN on the server and reload.' });
   });
 
+  test('IPv6 visitors share one login limit per /56, so rotating addresses does not escape it', async () => {
+    const from = (ip) => createClient(srv.url, { headers: { 'X-Forwarded-For': ip } });
+    for (let i = 1; i <= 5; i++) {
+      assert.equal((await from(`2001:db8:1:${i}::${i}`).login(OWNER, 'wrong password here')).status, 401, `attempt ${i}`);
+    }
+    assert.equal((await from('2001:db8:1:ff::99').login(OWNER, 'wrong password here')).status, 429);
+    // The next /56 and an IPv4-mapped visitor keep their own limits
+    assert.equal((await from('2001:db8:1:100::1').login(OWNER, 'wrong password here')).status, 401);
+    assert.equal((await from('::ffff:198.51.100.200').login(OWNER, 'wrong password here')).status, 401);
+  });
+
   test('the 6th login attempt from one address in 15 minutes gets 429', async () => {
     const client = clientFor(srv);
     for (let i = 1; i <= 5; i++) {

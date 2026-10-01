@@ -21,6 +21,7 @@ const { execSync } = require('child_process');
 const sharp = require('sharp');
 const { load: loadConfig, ConfigError } = require('./lib/config');
 const edition = require('./lib/edition');
+const { keyByIp } = require('./lib/ip-key');
 
 let config;
 try {
@@ -597,16 +598,19 @@ app.use(skipIngest(express.json({ limit: '10mb' })));
 app.use(skipIngest(express.urlencoded({ extended: true, limit: '10mb' })));
 app.use(cookieParser());
 
-// Rate limiting
+// Rate limiting. Every address-keyed limiter uses keyByIp: an IPv6 client counts per /56, not
+// per address, so rotating through its own prefix does not reset the limit.
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 5, // 5 attempts per window
+  keyGenerator: keyByIp,
   message: 'Too many login attempts, please try again later.',
   standardHeaders: true,
   legacyHeaders: false,
 });
 
 const apiLimiter = rateLimit({
+  keyGenerator: keyByIp,
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 100, // 100 requests per window
   standardHeaders: true,
@@ -614,6 +618,7 @@ const apiLimiter = rateLimit({
 });
 
 const uploadLimiter = rateLimit({
+  keyGenerator: keyByIp,
   windowMs: 60 * 60 * 1000, // 1 hour
   max: 10, // 10 uploads per hour
   message: 'Too many upload attempts, please try again later.',
@@ -623,6 +628,7 @@ const uploadLimiter = rateLimit({
 
 // Additional rate limiters for different endpoint types
 const publicReadLimiter = rateLimit({
+  keyGenerator: keyByIp,
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 300, // More lenient for public read operations
   message: 'Too many requests from this IP, please try again later.',
@@ -631,6 +637,7 @@ const publicReadLimiter = rateLimit({
 });
 
 const cardReadLimiter = rateLimit({
+  keyGenerator: keyByIp,
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 200, // Moderate limit for card reads
   message: 'Too many requests from this IP, please try again later.',
@@ -763,7 +770,7 @@ function setAuthCookie(res, token) {
 }
 
 // Per-user limiter keys: an owner behind a shared network is not throttled by other users.
-const keyByUser = (req) => (req.user?.id ? 'u:' + req.user.id : req.ip);
+const keyByUser = (req) => (req.user?.id ? 'u:' + req.user.id : keyByIp(req));
 
 const adminReadLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -1801,6 +1808,7 @@ app.get('/api/admin/cards', requireAuth, apiLimiter, (req, res, next) => {
 // GET Short Code Card (Public endpoint - short code lookup)
 // MUST come FIRST before other /api/cards routes to avoid route conflicts
 const shortCodeLimiter = rateLimit({
+  keyGenerator: keyByIp,
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 100, // 100 requests per window
   message: 'Too many short code lookup attempts',
