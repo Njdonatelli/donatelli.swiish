@@ -154,14 +154,21 @@ function HealthSection({ api }) {
           detail={live.liveSha ? <>Live commit <code>{shortSha(live.liveSha)}</code>.</> : null}
         />
         <Check
-          ok={connect.ingestSecretSet}
-          label="Card form can reach this server"
+          ok={connect.ingestSecretSet && connect.orgFound}
+          label="Card form ready on this server"
           detail={
-            connect.ingestSecretSet
-              ? connect.lastReceivedAt
-                ? 'Last connection received ' + formatDateTime(connect.lastReceivedAt) + '.'
-                : 'No connection received yet.'
-              : <><code>CONNECT_INGEST_SECRET</code> is not set, so card submissions are refused.</>
+            !connect.ingestSecretSet
+              ? <><code>CONNECT_INGEST_SECRET</code> is not set, so card submissions are refused.</>
+              : !connect.orgFound
+                ? (
+                  <>
+                    Card submissions are refused: no organisation has the slug <code>{connect.orgSlug}</code>.
+                    {connect.ownerOrgSlug ? <> Set <code>CONNECT_ORG_SLUG={connect.ownerOrgSlug}</code> on the admin server and restart.</> : null}
+                  </>
+                )
+                : connect.lastReceivedAt
+                  ? 'Last connection received ' + formatDateTime(connect.lastReceivedAt) + '.'
+                  : 'No connection received yet.'
           }
         />
         <Check ok={h.mail && h.mail.configured} label="Email set up" detail={h.mail && h.mail.configured ? null : 'Password reset works from the server shell only.'} />

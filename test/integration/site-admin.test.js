@@ -63,6 +63,23 @@ async function memberOf(srv, owner) {
   return member;
 }
 
+describe('health when setup named the organisation something else', () => {
+  let srv;
+  before(async () => { srv = await startServer({ env: { SITE_GITHUB_TOKEN: undefined, SITE_LIVE_URL: 'http://127.0.0.1:9/live' } }); });
+  after(() => srv.stop());
+
+  test('the card form check fails and names the slug to set', async () => {
+    const owner = clientFor(srv);
+    const res = await owner.setupOwner({ email: OWNER, password: PASSWORD, setupToken: srv.env.SETUP_TOKEN, organisationName: 'Donatelli Services' });
+    assert.equal(res.status, 200, res.text);
+    const health = await owner.get('/api/admin/health');
+    assert.equal(health.status, 200, health.text);
+    assert.deepEqual(health.json.connect, {
+      ingestSecretSet: true, orgSlug: 'donatelli-tech', orgFound: false, ownerOrgSlug: 'donatelli-services', lastReceivedAt: null,
+    });
+  });
+});
+
 describe('website tools without SITE_GITHUB_TOKEN', () => {
   let srv;
   let owner;
@@ -114,7 +131,7 @@ describe('website tools without SITE_GITHUB_TOKEN', () => {
     assert.deepEqual(res.json, {
       github: { tokenSet: false, canReadRepo: false, tokenExpiresAt: null, expiresSoon: false, workflowFound: false, rollbackWorkflowFound: false },
       live: { buildJsonReachable: false, liveSha: null },
-      connect: { ingestSecretSet: true, lastReceivedAt: null },
+      connect: { ingestSecretSet: true, orgSlug: 'donatelli-tech', orgFound: true, ownerOrgSlug: 'donatelli-tech', lastReceivedAt: null },
       mail: { configured: false },
       setup: { setupTokenPresent: true },
       backups: { enabled: false },
@@ -566,7 +583,7 @@ describe('website tools against the mock GitHub', () => {
         rollbackWorkflowFound: true,
       },
       live: { buildJsonReachable: true, liveSha: mock.state.live.get('main').commit },
-      connect: { ingestSecretSet: true, lastReceivedAt: null },
+      connect: { ingestSecretSet: true, orgSlug: 'donatelli-tech', orgFound: true, ownerOrgSlug: 'donatelli-tech', lastReceivedAt: null },
       mail: { configured: false },
       setup: { setupTokenPresent: true },
       backups: { enabled: false },
