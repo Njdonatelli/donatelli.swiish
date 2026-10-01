@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { guard, isBlocked, BLOCKED_PREFIXES, BLOCKED_EXACT } = require('../../lib/edition');
+const { guard, isBlocked, BLOCKED_PREFIXES, BLOCKED_EXACT, BLOCKED_ROUTES } = require('../../lib/edition');
 
 test('the blocked lists are exactly the Swiish public surfaces in the spec', () => {
   assert.deepEqual(BLOCKED_PREFIXES, [
@@ -71,6 +71,25 @@ test('path table: Swiish card surfaces are blocked, admin and ingest paths pass'
   }
 });
 
+test('creating or promoting a user is refused; listing and deleting users stay open', () => {
+  assert.deepEqual(BLOCKED_ROUTES.map(([method]) => method), ['POST', 'PATCH']);
+  const table = [
+    ['POST', '/api/admin/users', true],
+    ['POST', '/api/admin/users/', true],
+    ['post', '/API/Admin/Users', true],
+    ['PATCH', '/api/admin/users/0b7e7c1e-0000-4000-8000-000000000000', true],
+    ['PATCH', '/api/admin/users/abc/', true],
+    ['GET', '/api/admin/users', false],
+    ['DELETE', '/api/admin/users/abc', false],
+    ['PUT', '/api/admin/users', false],
+    ['POST', '/api/admin/users/abc', false],
+    ['POST', '/api/admin/usersx', false],
+  ];
+  for (const [method, path, blocked] of table) {
+    assert.equal(isBlocked(path, method), blocked, `${method} ${path}`);
+  }
+});
+
 function fakeRes() {
   return {
     headers: {},
@@ -87,15 +106,21 @@ test('the middleware sends JSON 404 for blocked paths and noindex on every respo
 
   const blockedRes = fakeRes();
   let nextCalled = false;
-  middleware({ path: '/api/cards/short/Ab3dE6x' }, blockedRes, () => { nextCalled = true; });
+  middleware({ path: '/api/cards/short/Ab3dE6x', method: 'GET' }, blockedRes, () => { nextCalled = true; });
   assert.equal(nextCalled, false);
   assert.equal(blockedRes.statusCode, 404);
   assert.deepEqual(blockedRes.body, { error: 'Not found' });
   assert.equal(blockedRes.headers['x-robots-tag'], 'noindex, nofollow');
 
   const allowedRes = fakeRes();
-  middleware({ path: '/api/health' }, allowedRes, () => { nextCalled = true; });
+  middleware({ path: '/api/health', method: 'GET' }, allowedRes, () => { nextCalled = true; });
   assert.equal(nextCalled, true);
   assert.equal(allowedRes.body, undefined);
   assert.equal(allowedRes.headers['x-robots-tag'], 'noindex, nofollow');
+
+  const userRes = fakeRes();
+  nextCalled = false;
+  middleware({ path: '/api/admin/users', method: 'POST' }, userRes, () => { nextCalled = true; });
+  assert.equal(nextCalled, false);
+  assert.equal(userRes.statusCode, 404);
 });

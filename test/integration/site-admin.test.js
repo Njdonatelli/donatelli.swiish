@@ -9,6 +9,7 @@ const crypto = require('crypto');
 const sqlite3 = require('sqlite3');
 const { startServer } = require('../helpers/server-harness');
 const { createClient } = require('../helpers/cookie-jar');
+const { seedMember } = require('../helpers/seed-member');
 const { startMockGitHub } = require('../../scripts/mock-github');
 
 const REPO = 'Njdonatelli/donatelli-website';
@@ -56,8 +57,7 @@ async function setupOwner(srv) {
 }
 
 async function memberOf(srv, owner) {
-  const created = await owner.post('/api/admin/users', { email: MEMBER, password: 'member password 1', role: 'member' });
-  assert.equal(created.status, 200, created.text);
+  await seedMember(srv.dbFile, { email: MEMBER, password: 'member password 1' });
   const member = clientFor(srv);
   assert.equal((await member.login(MEMBER, 'member password 1')).status, 200);
   return member;

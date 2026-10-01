@@ -7,6 +7,7 @@ const { spawn } = require('child_process');
 const sqlite3 = require('sqlite3');
 const { startServer, runUntilExit } = require('../helpers/server-harness');
 const { createClient } = require('../helpers/cookie-jar');
+const { seedMember, setRole } = require('../helpers/seed-member');
 const { BLOCKED_PREFIXES } = require('../../lib/edition');
 
 const OWNER = 'owner@example.com';
@@ -278,8 +279,7 @@ describe('a production server', () => {
   });
 
   test('roles come from the database on every request; /api/admin/logs is owner-only', async () => {
-    const created = await owner.post('/api/admin/users', { email: MEMBER, password: 'member password 1', role: 'member' });
-    assert.equal(created.status, 200, created.text);
+    const id = await seedMember(srv.dbFile, { email: MEMBER, password: 'member password 1' });
 
     const member = clientFor(srv);
     assert.equal((await member.login(MEMBER, 'member password 1')).status, 200);
@@ -288,15 +288,28 @@ describe('a production server', () => {
     assert.equal((await owner.get('/api/admin/logs')).status, 200);
 
     // A promotion applies to the member's existing token at once, and so does the demotion.
-    const id = created.json.userId;
-    assert.equal((await owner.patch(`/api/admin/users/${id}`, { role: 'owner' })).status, 200);
+    await setRole(srv.dbFile, id, 'owner');
     assert.equal((await member.get('/api/admin/logs')).status, 200);
-    assert.equal((await owner.patch(`/api/admin/users/${id}`, { role: 'member' })).status, 200);
+    await setRole(srv.dbFile, id, 'member');
     assert.equal((await member.get('/api/admin/logs')).status, 403);
 
     // A deleted user's token stops working immediately
     assert.equal((await owner.del(`/api/admin/users/${id}`)).status, 200);
     assert.equal((await member.get('/api/auth/me')).status, 401);
+  });
+
+  test('the owner cannot create or promote a second account; listing still works', async () => {
+    const created = await owner.post('/api/admin/users', { email: 'backdoor@example.net', password: 'short123', role: 'owner' });
+    assert.equal(created.status, 404);
+    assert.deepEqual(created.json, { error: 'Not found' });
+    assert.equal(created.headers.get('x-robots-tag'), 'noindex, nofollow');
+    const [self] = await query(srv.dbFile, 'SELECT id FROM users WHERE email = ?', [OWNER]);
+    const promoted = await owner.patch(`/api/admin/users/${self.id}`, { role: 'member' });
+    assert.equal(promoted.status, 404);
+    assert.equal((await query(srv.dbFile, "SELECT COUNT(*) AS n FROM users WHERE email = 'backdoor@example.net'"))[0].n, 0);
+    const list = await owner.get('/api/admin/users');
+    assert.equal(list.status, 200);
+    assert.deepEqual(list.json.map((u) => u.email), [OWNER]);
   });
 
   test('Swiish public surfaces answer JSON 404 with X-Robots-Tag', async () => {

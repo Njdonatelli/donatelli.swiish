@@ -12,6 +12,7 @@ const { spawn } = require('child_process');
 const sqlite3 = require('sqlite3');
 const { startServer } = require('../helpers/server-harness');
 const { createClient } = require('../helpers/cookie-jar');
+const { seedMember } = require('../helpers/seed-member');
 const { buildPayload, postSigned, ipHashFor } = require('../../scripts/sign-ingest');
 
 const ROOT = path.join(__dirname, '..', '..');
@@ -227,8 +228,7 @@ describe('connections on a production server', () => {
   });
 
   test('members get 403 on every connections route', async () => {
-    const created = await owner.post('/api/admin/users', { email: MEMBER, password: 'member password 1', role: 'member' });
-    assert.equal(created.status, 200, created.text);
+    await seedMember(srv.dbFile, { email: MEMBER, password: 'member password 1' });
     const member = clientFor(srv);
     assert.equal((await member.login(MEMBER, 'member password 1')).status, 200);
     const routes = [
