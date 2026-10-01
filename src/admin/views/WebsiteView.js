@@ -24,7 +24,7 @@ function runKey(status) {
   return status.state + '|' + r(status.production) + '|' + r(status.preview);
 }
 
-function StatusSection({ api, site, status, onStartDeploy }) {
+function StatusSection({ api, site, status, error: statusError, onStartDeploy }) {
   const branches = (site && site.branches) || { production: 'main', preview: 'admin-preview' };
   const [branch, setBranch] = useState('production');
   const [runs, setRuns] = useState(null);
@@ -50,7 +50,7 @@ function StatusSection({ api, site, status, onStartDeploy }) {
   return (
     <section className="section" aria-labelledby="ws-status">
       <Heading level={2} id="ws-status" text="Status." />
-      <StatusLine status={status} />
+      <StatusLine status={status} error={statusError} />
       <div className="cluster">
         {status && status.state === 'stalled' ? (
           <Button variant="secondary" icon={RefreshCw} onClick={onStartDeploy}>Start deploy</Button>
@@ -183,8 +183,8 @@ export default function WebsiteView({ api }) {
       <div className="stack section-tight">
         <DraftNotes draft={draft} status={status} />
       </div>
-      {status && status.configured !== false && draft.configured !== false ? (
-        <StatusSection api={api} site={site} status={status} onStartDeploy={redeploy} />
+      {(status || siteStatus.error) && (!status || status.configured !== false) && draft.configured !== false ? (
+        <StatusSection api={api} site={site} status={status} error={siteStatus.error} onStartDeploy={redeploy} />
       ) : null}
       {ready ? (
         <>

@@ -20,7 +20,7 @@ function Metrics({ counts }) {
 export { Metrics };
 
 export default function HomeView({ api }) {
-  const { status } = useSiteStatus();
+  const { status, error: statusError } = useSiteStatus();
   const [conn, setConn] = useState(null);
   const [error, setError] = useState(null);
   const [qrFailed, setQrFailed] = useState(false);
@@ -39,7 +39,7 @@ export default function HomeView({ api }) {
         <div className="stack-lg">
           <section className="stack" aria-label="donatelli.tech status">
             <p className="eyebrow">donatelli.tech</p>
-            <StatusLine status={status} />
+            <StatusLine status={status} error={statusError} />
             <div className="cluster">
               <ButtonLink to="/admin/website" variant="secondary">Open Website</ButtonLink>
               {live ? <ExternalLink href={live} variant="secondary" icon={ExternalIcon}>Open donatelli.tech</ExternalLink> : null}

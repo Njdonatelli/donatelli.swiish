@@ -64,7 +64,7 @@ function AccountMenu({ email, onLogout }) {
 
 export default function Shell() {
   const session = useSession();
-  const { status } = useSiteStatus();
+  const { status, error: statusError } = useSiteStatus();
   const navigate = useNavigate();
   const location = useLocation();
   const first = useRef(true);
@@ -96,7 +96,7 @@ export default function Shell() {
       <header className="topbar">
         <Wordmark to="/admin" />
         <div className="topbar-end">
-          <StatusPill status={status} onOpen={() => navigate('/admin/website')} />
+          <StatusPill status={status} error={statusError} onOpen={() => navigate('/admin/website')} />
           <AccountMenu email={session.user && session.user.email} onLogout={logout} />
         </div>
       </header>
