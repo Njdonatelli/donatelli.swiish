@@ -12,22 +12,28 @@ export default function usePoll(fn, delayMs, enabled = true) {
     if (!enabled) return undefined;
     let timer = null;
     let stopped = false;
+    // Local to this effect: a request from an earlier delay must not block this effect's own restart.
+    let inFlight = false;
 
     const run = async () => {
       timer = null;
       if (stopped || document.hidden) return;
       lastRun.current = Date.now();
+      inFlight = true;
       try {
         await fnRef.current();
       } finally {
+        inFlight = false;
         if (!stopped && !document.hidden) timer = setTimeout(run, delayMs);
       }
     };
+    // A hide and show while a request is out must not start a second chain: that request's finally
+    // schedules the next run.
     const onVisibility = () => {
       if (document.hidden) {
         clearTimeout(timer);
         timer = null;
-      } else if (!timer) {
+      } else if (!timer && !inFlight) {
         run();
       }
     };
