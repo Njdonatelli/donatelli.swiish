@@ -629,6 +629,98 @@ async function cardEditFlow(t) {
   await p1280.getByText('No draft.', { exact: false }).waitFor();
 }
 
+// A write the SPA would make, with the session's CSRF token: here, the owner's other device.
+async function apiWrite(page, url, method, p, data) {
+  const { csrfToken } = await api(page, url, '/api/csrf-token');
+  const r = await page.request.fetch(url + p, { method, data, headers: { 'X-CSRF-Token': csrfToken } });
+  if (!r.ok()) fail(`${method} ${p} answered ${r.status()}: ${await r.text()}`);
+  return r.json();
+}
+
+// The shared draft under a slow network. Coming back to a tab re-reads the draft while the form is already
+// editable, and a save sent as the page hides cannot wait for the answer to the save before it.
+async function draftRaceFlow(t) {
+  const { ADMIN } = t;
+  const page = await t.a1280.ctx.newPage();
+  const draftNow = async () => (await api(page, ADMIN, '/api/admin/site')).draft;
+  const draftRead = () => page.waitForResponse((r) => new URL(r.url()).pathname === '/api/admin/site' && r.request().method() === 'GET', { timeout: 15000 });
+  // Each switch to a tab re-reads the draft through a GitHub round trip, here a slow one. Back on Card, the
+  // form is editable while that read is still on its way; `read` settles when it lands.
+  const switchTabs = async () => {
+    const away = draftRead();
+    await page.click('nav a[href="/admin/website"]');
+    await away;
+    const read = draftRead();
+    await page.click('nav a[href="/admin/card"]');
+    await page.locator('#f-owner-jobTitle').waitFor();
+    return { read };
+  };
+
+  await page.goto(ADMIN + '/admin/card');
+  await page.locator('#f-owner-jobTitle').waitFor();
+  await page.route('**/api/admin/site', async (route) => {
+    if (route.request().method() === 'GET') await new Promise((r) => setTimeout(r, 1500));
+    await route.continue();
+  });
+
+  const typed = 'Typed while the tab re-read the draft';
+  let { read } = await switchTabs();
+  await page.fill('#f-owner-jobTitle', typed);
+  await read;
+  const kept = [];
+  await page.waitForTimeout(300);
+  const shown = await page.inputValue('#f-owner-jobTitle');
+  if (shown !== typed) kept.push(`the field went back to ${JSON.stringify(shown)}`);
+  await waitFor(async () => (await draftNow())?.config.owner.jobTitle === typed, { what: 'the edit to autosave' }).catch((e) => kept.push(e.message));
+  check('draft-edit-during-tab-switch', kept);
+
+  // The phone saves the draft while this page's re-read is on its way, and the laptop types over it.
+  const phone = await draftNow();
+  ({ read } = await switchTabs());
+  const phoneTitle = 'Saved on the phone';
+  await apiWrite(page, ADMIN, 'POST', '/api/admin/site/draft', {
+    config: { ...phone.config, owner: { ...phone.config.owner, jobTitle: phoneTitle } }, baseSha: phone.baseSha, rev: phone.rev,
+  });
+  await page.fill('#f-owner-jobTitle', 'Typed on the laptop');
+  await read;
+  const refused = [];
+  await page.locator('.draft-line', { hasText: 'changed on another device or tab' }).waitFor({ timeout: 10000 }).catch((e) => refused.push(e.message));
+  const kept2 = (await draftNow())?.config.owner.jobTitle;
+  if (kept2 !== phoneTitle) refused.push(`the stored draft has job title ${JSON.stringify(kept2)}, not the phone's`);
+  check('draft-changed-elsewhere-during-tab-switch', refused);
+  await page.unroute('**/api/admin/site');
+
+  // The server takes each save at once, but its first answer reaches the page 1.5 s late.
+  await page.goto(ADMIN + '/admin/card');
+  await page.locator('#f-owner-jobTitle').waitFor();
+  const statuses = [];
+  await page.route('**/api/admin/site/draft', async (route) => {
+    if (route.request().method() !== 'POST') return route.continue();
+    const response = await route.fetch();
+    statuses.push(response.status());
+    if (statuses.length === 1) await new Promise((r) => setTimeout(r, 1500));
+    return route.fulfill({ response });
+  });
+  await page.fill('#f-owner-jobTitle', 'First edit');
+  await waitFor(() => statuses.length === 1, { what: 'the first autosave to reach the server' });
+  await page.fill('#f-owner-jobTitle', 'Second edit, then the owner switches apps');
+  await page.evaluate(() => {
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  const hidden = [];
+  await waitFor(() => statuses.length >= 2, { what: 'the save sent on hide' }).catch((e) => hidden.push(e.message));
+  if (statuses.some((s) => s !== 200)) hidden.push(`draft saves answered ${statuses.join(', ')}`);
+  const last = (await draftNow())?.config.owner.jobTitle;
+  if (last !== 'Second edit, then the owner switches apps') hidden.push(`the stored draft has job title ${JSON.stringify(last)}`);
+  check('draft-saved-on-hide-during-save', hidden);
+
+  // Every answer reaches the page first, so nothing it sends as it closes can land after the discard.
+  await page.waitForTimeout(2000);
+  await page.close();
+  await apiWrite(t.a1280.page, ADMIN, 'DELETE', '/api/admin/site/draft');
+}
+
 // Website tab: a site-facts edit through to live, a restore from History, Redeploy, and a dry-run rollback.
 async function websiteFlow(t) {
   const { ADMIN, mock } = t;
@@ -863,6 +955,7 @@ async function main() {
   await cardScreens(browser, edge);
   await connectionsFlow(t);
   await cardEditFlow(t);
+  await draftRaceFlow(t);
   await websiteFlow(t);
   await accountFlow(t);
   await checkLogs(harness);

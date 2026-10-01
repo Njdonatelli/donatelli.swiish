@@ -27,6 +27,15 @@ function writePreviewRecord(record) {
   }
 }
 
+// Names this page's loaded copy of the draft to the server, which orders the copy's own saves by its edit
+// count, so a save sent on hide is not refused because the save before it has not answered yet.
+// getRandomValues, unlike randomUUID, also works when the admin is served over plain http.
+function newWriterId() {
+  const bytes = new Uint8Array(12);
+  window.crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
 // owner.name is not typed by the owner: rule R1 makes it given name + space + family name.
 function withDerivedName(config, path) {
   if (path !== 'owner.givenName' && path !== 'owner.familyName') return config;
@@ -56,18 +65,29 @@ function useDraftState(api) {
   const rev = useRef(0);
   const savedRev = useRef(0);
   const draftRev = useRef(0);
+  const writer = useRef(null);
   const latest = useRef({ config: null, baseSha: null });
   const inFlight = useRef(null);
   const again = useRef(false);
   const previewing = useRef(false);
   const timer = useRef(null);
   const loaded = useRef(false);
+  const loadSeq = useRef(0);
 
   latest.current = { config, baseSha };
 
-  const load = useCallback(async () => {
+  // A background load re-reads the draft under a form that stays editable. If an edit, a save or a preview
+  // happened during the request, this page's copy is the newer one and the read is dropped whole: its next
+  // save still sends the rev it holds, so a draft saved elsewhere meanwhile is refused, not overwritten.
+  const load = useCallback(async ({ background = false } = {}) => {
+    const seq = ++loadSeq.current;
+    const startRev = rev.current;
+    const startDraftRev = draftRev.current;
     try {
       const s = await api.get('/admin/site');
+      // A read started later holds a newer draft than this one.
+      if (seq !== loadSeq.current) return;
+      if (background && (rev.current !== startRev || draftRev.current !== startDraftRev || inFlight.current || previewing.current)) return;
       setSite(s);
       setLoadError(null);
       loaded.current = true;
@@ -78,10 +98,12 @@ function useDraftState(api) {
       setSavedAt(d ? d.savedAt : null);
       draftRev.current = d && Number.isInteger(d.rev) ? d.rev : 0;
       setSaveError(null);
+      // The edit count starts again, so it needs an id of its own to stay increasing.
+      writer.current = newWriterId();
       rev.current = 0;
       savedRev.current = 0;
     } catch (e) {
-      setLoadError(e);
+      if (seq === loadSeq.current) setLoadError(e);
     }
   }, [api]);
 
@@ -94,7 +116,9 @@ function useDraftState(api) {
       return inFlight.current || Promise.resolve();
     }
     const target = rev.current;
-    const body = { config: latest.current.config, baseSha: latest.current.baseSha, rev: draftRev.current };
+    // A keepalive save does not wait for the save in flight, so draftRev can predate it; writer and seq tell
+    // the server that the stored draft is this page's own.
+    const body = { config: latest.current.config, baseSha: latest.current.baseSha, rev: draftRev.current, writer: writer.current, seq: target };
     const run = api
       .post('/admin/site/draft', body, keepalive ? { keepalive: true } : undefined)
       .then((r) => {
@@ -266,7 +290,7 @@ function useDraftState(api) {
   // saved on another device shows up without overwriting an edit made on this one.
   const refresh = useCallback(() => {
     if (!loaded.current) return load();
-    if (rev.current === savedRev.current && !inFlight.current && !previewing.current) return load();
+    if (rev.current === savedRev.current && !inFlight.current && !previewing.current) return load({ background: true });
     return Promise.resolve();
   }, [load]);
 
