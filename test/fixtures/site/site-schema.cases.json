@@ -1,0 +1,357 @@
+[
+  {
+    "name": "valid site.json",
+    "set": [],
+    "expect": []
+  },
+  {
+    "name": "markup in a string",
+    "set": [
+      {
+        "path": "tagline",
+        "value": "<script>x</script>"
+      }
+    ],
+    "expect": [
+      "tagline"
+    ]
+  },
+  {
+    "name": "an HTML entity",
+    "set": [
+      {
+        "path": "tagline",
+        "value": "A &amp; B"
+      }
+    ],
+    "expect": [
+      "tagline"
+    ]
+  },
+  {
+    "name": "a bare ampersand before a space",
+    "set": [
+      {
+        "path": "tagline",
+        "value": "A & B"
+      }
+    ],
+    "expect": []
+  },
+  {
+    "name": "a control character",
+    "set": [
+      {
+        "path": "tagline",
+        "value": "Ring\u0007"
+      }
+    ],
+    "expect": [
+      "tagline"
+    ]
+  },
+  {
+    "name": "a booking host the CSP does not frame",
+    "set": [
+      {
+        "path": "bookingUrl",
+        "value": "https://calendly.com/x"
+      }
+    ],
+    "expect": [
+      "bookingUrl"
+    ]
+  },
+  {
+    "name": "a plain-http booking link",
+    "set": [
+      {
+        "path": "bookingUrl",
+        "value": "http://cal.com/x"
+      }
+    ],
+    "expect": [
+      "bookingUrl"
+    ]
+  },
+  {
+    "name": "no booking link",
+    "set": [
+      {
+        "path": "bookingUrl",
+        "value": null
+      }
+    ],
+    "expect": []
+  },
+  {
+    "name": "an incomplete email address",
+    "set": [
+      {
+        "path": "contactEmail",
+        "value": "hello@"
+      }
+    ],
+    "expect": [
+      "contactEmail"
+    ]
+  },
+  {
+    "name": "a full name that is not given + family",
+    "set": [
+      {
+        "path": "owner.name",
+        "value": "Nicolas Donatelli"
+      }
+    ],
+    "expect": [
+      "owner.name"
+    ]
+  },
+  {
+    "name": "a state name where the code goes",
+    "set": [
+      {
+        "path": "owner.region",
+        "value": "Calif"
+      }
+    ],
+    "expect": [
+      "owner.region"
+    ]
+  },
+  {
+    "name": "an unknown field",
+    "set": [
+      {
+        "path": "owner.phone",
+        "value": "555"
+      }
+    ],
+    "expect": [
+      "owner.phone"
+    ]
+  },
+  {
+    "name": "a year before the site existed",
+    "set": [
+      {
+        "path": "year",
+        "value": 2023
+      }
+    ],
+    "expect": [
+      "year"
+    ]
+  },
+  {
+    "name": "a different brand name",
+    "set": [
+      {
+        "path": "name",
+        "value": "Donatelli"
+      }
+    ],
+    "expect": [
+      "name"
+    ]
+  },
+  {
+    "name": "a card line over the limit",
+    "set": [
+      {
+        "path": "card.lede",
+        "value": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+      }
+    ],
+    "expect": [
+      "card.lede"
+    ]
+  },
+  {
+    "name": "too many extra links",
+    "set": [
+      {
+        "path": "card.links",
+        "value": [
+          {
+            "label": "L",
+            "url": "https://a.b/"
+          },
+          {
+            "label": "L",
+            "url": "https://a.b/"
+          },
+          {
+            "label": "L",
+            "url": "https://a.b/"
+          },
+          {
+            "label": "L",
+            "url": "https://a.b/"
+          },
+          {
+            "label": "L",
+            "url": "https://a.b/"
+          }
+        ]
+      }
+    ],
+    "expect": [
+      "card.links"
+    ]
+  },
+  {
+    "name": "a javascript: link",
+    "set": [
+      {
+        "path": "card.links",
+        "value": [
+          {
+            "label": "X",
+            "url": "javascript:alert(1)"
+          }
+        ]
+      }
+    ],
+    "expect": [
+      "card.links.0.url"
+    ]
+  },
+  {
+    "name": "a plain-http profile link",
+    "set": [
+      {
+        "path": "ownerSameAs",
+        "value": [
+          "http://x.com/"
+        ]
+      }
+    ],
+    "expect": [
+      "ownerSameAs.0"
+    ]
+  },
+  {
+    "name": "the form on without a notice or retention",
+    "set": [
+      {
+        "path": "card.connect.enabled",
+        "value": true
+      }
+    ],
+    "expect": [
+      "card.connect.notice",
+      "card.connect.retentionDays"
+    ]
+  },
+  {
+    "name": "a retention period under 30 days",
+    "set": [
+      {
+        "path": "card.connect.retentionDays",
+        "value": 10
+      }
+    ],
+    "expect": [
+      "card.connect.retentionDays"
+    ]
+  },
+  {
+    "name": "a double quote in the notice",
+    "set": [
+      {
+        "path": "card.connect.notice",
+        "value": "He said \"hi\" xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+      }
+    ],
+    "expect": [
+      "card.connect.notice"
+    ]
+  },
+  {
+    "name": "no public email (security.txt needs a Contact)",
+    "set": [
+      {
+        "path": "contactEmail",
+        "value": null
+      }
+    ],
+    "expect": [
+      "contactEmail"
+    ]
+  },
+  {
+    "name": "a profile link with a query string",
+    "set": [
+      {
+        "path": "sameAs",
+        "value": [
+          "https://www.google.com/maps?cid=1234567890&hl=en"
+        ]
+      }
+    ],
+    "expect": []
+  },
+  {
+    "name": "a card link with & in it",
+    "set": [
+      {
+        "path": "card.links",
+        "value": [
+          {
+            "label": "Listing",
+            "url": "https://example.com/listing?a=1&b=2"
+          }
+        ]
+      }
+    ],
+    "expect": []
+  },
+  {
+    "name": "markup characters in a link",
+    "set": [
+      {
+        "path": "ownerSameAs",
+        "value": [
+          "https://example.com/\"onmouseover=x",
+          "https://example.com/<b>",
+          "https://example.com/`x`"
+        ]
+      }
+    ],
+    "expect": [
+      "ownerSameAs.0",
+      "ownerSameAs.1",
+      "ownerSameAs.2"
+    ]
+  },
+  {
+    "name": "a control character in a link",
+    "set": [
+      {
+        "path": "sameAs",
+        "value": [
+          "https://example.com/a\u0007b",
+          "https://example.com/ab"
+        ]
+      }
+    ],
+    "expect": [
+      "sameAs.0",
+      "sameAs.1"
+    ]
+  },
+  {
+    "name": "a Google Maps listing link as copied (over 200 characters)",
+    "set": [
+      {
+        "path": "sameAs",
+        "value": [
+          "https://www.google.com/maps/place/donatelli.tech/@33.1433723,-117.1661449,17z/data=!3m1!4b1!4m6!3m5!1s0x80dc0b0e0e0e0e0e:0x1234567890abcdef!8m2!3d33.1433723!4d-117.16357!16s%2Fg%2F11abcdefgh?entry=ttu&g_ep=EgoyMDI2MDkyOC4wIKXMDSoASAFQAw%3D%3D"
+        ]
+      }
+    ],
+    "expect": []
+  }
+]

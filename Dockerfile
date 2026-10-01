@@ -1,5 +1,5 @@
 # Build Stage
-FROM node:22-alpine as build
+FROM node:22-alpine AS build
 WORKDIR /app
 
 # Install git to allow branch detection
@@ -9,7 +9,7 @@ COPY package*.json ./
 COPY tailwind.config.js ./
 COPY postcss.config.js ./
 COPY scripts/ scripts/
-RUN npm install
+RUN npm ci
 
 COPY public/ public/
 COPY src/ src/
@@ -39,14 +39,20 @@ RUN apk add --no-cache fontconfig \
 COPY --from=build /app/build ./build
 COPY --from=build /app/src/active-branch.json ./active-branch.json
 COPY package*.json ./
-RUN npm install --production
+RUN npm ci --omit=dev
 COPY server.js .
 COPY database.json .
 COPY migrations/ ./migrations/
+# lib/ holds the config, edition guard and admin modules; scripts/ holds the break-glass
+# tools (set-password, backup-db) that must run inside this container.
+COPY lib/ ./lib/
+COPY scripts/ ./scripts/
+# A published image is a conveyed copy of the program, so the license and notices travel with it.
+COPY LICENSE COPYING NOTICE.md TRADEMARKS.md ./
 
 # Create dirs for volumes
-RUN mkdir data
-RUN mkdir uploads
+RUN mkdir -p data/backups uploads
 
 EXPOSE 3000
+HEALTHCHECK CMD wget -qO- http://127.0.0.1:3000/api/health || exit 1
 CMD ["node", "server.js"]

@@ -7,7 +7,7 @@ const multer = require('multer');
 const fs = require('fs');
 const jwt = require('jsonwebtoken');
 const cookieParser = require('cookie-parser');
-const { body, param, validationResult } = require('express-validator');
+const { body, param, query: queryParam, validationResult } = require('express-validator');
 const validator = require('validator');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
@@ -19,9 +19,21 @@ const nodemailer = require('nodemailer');
 const util = require('util');
 const { execSync } = require('child_process');
 const sharp = require('sharp');
+const { load: loadConfig, ConfigError } = require('./lib/config');
+const edition = require('./lib/edition');
+const { keyByIp } = require('./lib/ip-key');
+
+let config;
+try {
+  config = loadConfig(process.env);
+} catch (err) {
+  if (!(err instanceof ConfigError)) throw err;
+  console.error(err.message);
+  process.exit(1);
+}
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = config.port;
 
 // Short code configuration
 const SHORT_CODE_LENGTH = 7;
@@ -58,19 +70,12 @@ function log(message, data = null) {
 // Trust proxy for rate limiting behind reverse proxy/load balancer
 app.set('trust proxy', 1);
 
-// Validate required environment variables
-const requiredEnvVars = ['JWT_SECRET'];
-const missingEnvVars = requiredEnvVars.filter(envVar => !process.env[envVar]);
-if (missingEnvVars.length > 0) {
-  console.error(`ERROR: Missing required environment variables: ${missingEnvVars.join(', ')}`);
-  console.error('Please set these in your .env file or environment.');
-  process.exit(1);
-}
-
-const JWT_SECRET = process.env.JWT_SECRET;
-const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '24h';
-const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : ['http://localhost:3000', 'http://localhost:8095'];
-const NODE_ENV = process.env.NODE_ENV || 'development';
+// Required values and their production rules live in lib/config.js, which already refused to
+// boot above if anything was missing or unsafe.
+const JWT_SECRET = config.jwt.secret;
+const JWT_EXPIRES_IN = config.jwt.expiresIn;
+const ALLOWED_ORIGINS = config.allowedOrigins;
+const NODE_ENV = config.nodeEnv;
 
 // Email configuration
 const SMTP_HOST = process.env.SMTP_HOST;
@@ -79,14 +84,7 @@ const SMTP_SECURE = process.env.SMTP_SECURE === 'true';
 const SMTP_USER = process.env.SMTP_USER;
 const SMTP_PASSWORD = process.env.SMTP_PASSWORD;
 const SMTP_FROM = process.env.SMTP_FROM || 'noreply@localhost';
-const APP_URL = process.env.APP_URL || (() => {
-  if (NODE_ENV === 'production') {
-    console.error('ERROR: APP_URL must be set in production environment');
-    console.error('Please set APP_URL in your .env file with your actual domain (e.g., https://yourdomain.com)');
-    process.exit(1);
-  }
-  return 'http://localhost:3000';
-})();
+const APP_URL = config.appUrl;
 
 // Demo Mode configuration
 const IS_DEMO_MODE = process.env.DEMO_MODE === 'true';
@@ -145,6 +143,14 @@ const UPLOADS_DIR = path.join(__dirname, 'uploads');
 
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+// data/ holds cards.db and its backups: the owner's password hash and every visitor's details. The
+// container runs as root with umask 022, so files land 0644 on the host's bind mount; closing the
+// folder covers the database, its journal, the backups and a pre-restore copy, on every start.
+try {
+  fs.chmodSync(DATA_DIR, 0o700);
+} catch (err) {
+  console.warn(`Could not restrict ${DATA_DIR} to its owner: ${err.message}`);
+}
 
 // Path validation helper to prevent path traversal attacks
 function validateFilePath(filePath) {
@@ -313,6 +319,15 @@ db.run("PRAGMA foreign_keys = ON", (err) => {
   console.log('[DB] Foreign key constraints enabled');
 });
 
+// A plain DELETE only frees pages, leaving an erased visitor's details readable in cards.db until
+// SQLite reuses them. ON (not FAST) also zeroes freelist and overflow pages, where a long note can sit.
+db.run("PRAGMA secure_delete = ON", (err) => {
+  if (err) {
+    console.error('CRITICAL: Failed to enable secure_delete:', err);
+    process.exit(1);
+  }
+});
+
 if (IS_DEMO_MODE) {
   console.log(`[DB] Using demo database: ${DB_FILENAME}`);
 } else {
@@ -322,6 +337,14 @@ if (IS_DEMO_MODE) {
 // Promisified database methods for async/await error handling
 const dbRun = util.promisify(db.run.bind(db));
 const dbGet = util.promisify(db.get.bind(db));
+const dbAll = util.promisify(db.all.bind(db));
+// dbRun cannot report changes/lastID: sqlite3 puts them on the callback's `this`.
+const dbRunInfo = (sql, params = []) => new Promise((resolve, reject) => {
+  db.run(sql, params, function (err) {
+    if (err) reject(err);
+    else resolve({ changes: this.changes, lastID: this.lastID });
+  });
+});
 
 // Helper function to log audit events
 async function logAudit(eventType, entityType, entityId, entityData, performedBy, organisationId) {
@@ -525,17 +548,21 @@ app.use((req, res, next) => {
   next();
 });
 
-// Security headers - configure CSP with connect-src for GitHub API
+// Security headers. The admin talks only to its own origin; GitHub is reached server-side.
 const cspDirectives = {
   defaultSrc: ["'self'"],
-  imgSrc: ["'self'", "data:", "https:"],
+  // The card preview shows the live site's portrait, so that one origin is allowed for images.
+  imgSrc: ["'self'", "data:", new URL(config.site.liveUrl).origin],
   styleSrc: ["'self'", "'unsafe-inline'"], // Keep for CSS (less critical)
   fontSrc: ["'self'", "data:"],
   // Allow debug logging endpoint in development only (for development debugging)
-  // Also allow GitHub API for version checking
-  connectSrc: NODE_ENV === 'development' 
-    ? ["'self'", "http://127.0.0.1:7243", "http://localhost:7243", "https://api.github.com"]
-    : ["'self'", "https://api.github.com"]
+  connectSrc: NODE_ENV === 'development'
+    ? ["'self'", "http://127.0.0.1:7243", "http://localhost:7243"]
+    : ["'self'"],
+  frameAncestors: ["'none'"],
+  baseUri: ["'self'"],
+  formAction: ["'self'"],
+  objectSrc: ["'none'"]
 };
 
 app.use((req, res, next) => {
@@ -567,29 +594,40 @@ app.use(cors({
     if (!origin || ALLOWED_ORIGINS.includes(origin)) {
       callback(null, true);
     } else {
-      callback(new Error('Not allowed by CORS'));
+      const err = new Error('Not allowed by CORS');
+      err.code = 'CORS_ORIGIN';
+      callback(err);
     }
   },
   credentials: true,
-  methods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token']
 }));
 
-// Body parsing
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(edition.guard(config));
+
+// Body parsing. The ingest route verifies an HMAC over the raw bytes and caps them at 16 KB
+// itself, so the 10 MB parsers must leave its body untouched.
+const skipIngest = (parser) => (req, res, next) => (
+  req.path.toLowerCase().startsWith('/api/ingest/') ? next() : parser(req, res, next)
+);
+app.use(skipIngest(express.json({ limit: '10mb' })));
+app.use(skipIngest(express.urlencoded({ extended: true, limit: '10mb' })));
 app.use(cookieParser());
 
-// Rate limiting
+// Rate limiting. Every address-keyed limiter uses keyByIp: an IPv6 client counts per /56, not
+// per address, so rotating through its own prefix does not reset the limit.
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 5, // 5 attempts per window
+  keyGenerator: keyByIp,
   message: 'Too many login attempts, please try again later.',
   standardHeaders: true,
   legacyHeaders: false,
 });
 
 const apiLimiter = rateLimit({
+  keyGenerator: keyByIp,
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 100, // 100 requests per window
   standardHeaders: true,
@@ -597,6 +635,7 @@ const apiLimiter = rateLimit({
 });
 
 const uploadLimiter = rateLimit({
+  keyGenerator: keyByIp,
   windowMs: 60 * 60 * 1000, // 1 hour
   max: 10, // 10 uploads per hour
   message: 'Too many upload attempts, please try again later.',
@@ -606,6 +645,7 @@ const uploadLimiter = rateLimit({
 
 // Additional rate limiters for different endpoint types
 const publicReadLimiter = rateLimit({
+  keyGenerator: keyByIp,
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 300, // More lenient for public read operations
   message: 'Too many requests from this IP, please try again later.',
@@ -614,6 +654,7 @@ const publicReadLimiter = rateLimit({
 });
 
 const cardReadLimiter = rateLimit({
+  keyGenerator: keyByIp,
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 200, // Moderate limit for card reads
   message: 'Too many requests from this IP, please try again later.',
@@ -635,6 +676,10 @@ if (NODE_ENV === 'production') {
   app.use((req, res, next) => {
     // Check if request is already secure (via reverse proxy)
     if (req.headers['x-forwarded-proto'] === 'https' || req.secure) {
+      return next();
+    }
+    // The container HEALTHCHECK calls plain http on 127.0.0.1, behind no proxy
+    if (req.path === '/api/health') {
       return next();
     }
     // Only redirect if explicitly configured
@@ -687,31 +732,70 @@ const requireAuth = (req, res, next) => {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
+  let decoded;
   try {
-    const decoded = jwt.verify(token, JWT_SECRET);
-    // Support both old format (admin: true) and new format (user_id, organisation_id, role)
-    if (decoded.user_id) {
-      req.user = {
-        id: decoded.user_id,
-        organisationId: decoded.organisation_id || null,
-        role: decoded.role || 'member'
-      };
-    } else if (decoded.admin) {
-      // Backward compatibility: if old JWT format, treat as admin
-      // This allows old tokens to still work during transition
-      req.user = {
-        id: null,
-        organisationId: null,
-        role: 'admin'
-      };
-    } else {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-    next();
+    decoded = jwt.verify(token, JWT_SECRET);
   } catch (err) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
+  // Legacy { admin: true } tokens name no user row, so they cannot be checked against
+  // session_version and are refused.
+  if (!decoded.user_id) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  // Role and session version come from the database on every request, so a demotion,
+  // deletion, password change or "sign out everywhere" takes effect at once.
+  db.get(
+    'SELECT role, organisation_id, session_version FROM users WHERE id = ?',
+    [decoded.user_id],
+    (err, row) => {
+      if (err) return next(err);
+      if (!row || (decoded.sv ?? 0) !== row.session_version) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+      req.user = {
+        id: decoded.user_id,
+        organisationId: row.organisation_id || null,
+        role: row.role || 'member'
+      };
+      next();
+    }
+  );
 };
+
+function signSession({ userId, organisationId, role, sessionVersion }) {
+  return jwt.sign(
+    {
+      user_id: userId,
+      organisation_id: organisationId,
+      role,
+      sv: sessionVersion
+    },
+    JWT_SECRET,
+    { expiresIn: JWT_EXPIRES_IN }
+  );
+}
+
+function setAuthCookie(res, token) {
+  res.cookie('authToken', token, {
+    httpOnly: true,
+    secure: NODE_ENV === 'production',
+    sameSite: 'strict',
+    maxAge: config.jwt.cookieMaxAgeMs
+  });
+}
+
+// Per-user limiter keys: an owner behind a shared network is not throttled by other users.
+const keyByUser = (req) => (req.user?.id ? 'u:' + req.user.id : keyByIp(req));
+
+const adminReadLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 600,
+  keyGenerator: keyByUser,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 // Role-based access control middleware
 const requireRole = (...allowedRoles) => {
@@ -730,6 +814,21 @@ const requireRole = (...allowedRoles) => {
 
 // Error handling middleware
 const errorHandler = (err, req, res, next) => {
+  // Client errors keep their real status in every environment, so the admin can tell a stale
+  // session or a foreign origin from a server fault.
+  if (err.code === 'EBADCSRFTOKEN') {
+    return res.status(403).json({ error: 'Session check failed. Reload the page and try again.', code: 'CSRF' });
+  }
+  if (err.code === 'CORS_ORIGIN') {
+    return res.status(403).json({ error: 'Origin not allowed.', code: 'ORIGIN' });
+  }
+  if (err instanceof multer.MulterError) {
+    return res.status(400).json({ error: err.message, code: err.code });
+  }
+  if (err.type === 'entity.too.large') {
+    return res.status(413).json({ error: 'Request too large.', code: 'TOO_LARGE' });
+  }
+
   console.error('Error:', err);
   
   // Don't leak error details in production
@@ -790,6 +889,20 @@ const escapeXml = (str) => {
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&apos;');
 };
+
+// Transactional email in the donatelli.tech look: ink text on signal, never white on orange
+// (3.50:1). Values are escaped here because organisation names are user input.
+function renderEmail({ heading, paragraph, action, footnote }) {
+  const title = escapeXml(heading).replace(/\.$/, '<span style="color:#E85D10;">.</span>');
+  return `
+          <div style="font-family: Archivo, 'Helvetica Neue', Arial, sans-serif; color: #1A1917; font-size: 16px; line-height: 1.5;">
+            <h2 style="font-size: 24px; line-height: 1.25; font-weight: 600; margin: 0 0 16px;">${title}</h2>
+            <p style="margin: 0 0 16px;">${escapeXml(paragraph)}</p>
+            <p style="margin: 0 0 16px;"><a href="${escapeXml(action.href)}" style="background-color: #E85D10; color: #0E0D0C; padding: 8px 16px; text-decoration: none; border-radius: 4px; display: inline-block; font-size: 14px; font-weight: 500;">${escapeXml(action.label)}</a></p>
+            <p style="margin: 0; color: #5C5852; font-size: 14px;">${escapeXml(footnote)}</p>
+          </div>
+        `;
+}
 
 /**
  * Secure Avatar Fetching with Path Validation
@@ -1024,7 +1137,8 @@ app.get('/api/setup/status', apiLimiter, (req, res, next) => {
     return res.json({
       setupComplete: true,
       userCount: 6, // 6 demo users
-      demoMode: true
+      demoMode: true,
+      mailConfigured: config.mailConfigured
     });
   }
 
@@ -1033,7 +1147,11 @@ app.get('/api/setup/status', apiLimiter, (req, res, next) => {
     res.json({
       setupComplete: row.count > 0,
       userCount: row.count,
-      demoMode: false
+      demoMode: false,
+      mailConfigured: config.mailConfigured,
+      // Development with no SETUP_TOKEN skips the check (requireSetupToken), so the form can leave the
+      // field out; production always needs it, so this reveals nothing there.
+      setupTokenRequired: config.isProd || Boolean(config.setupToken)
     });
   });
 });
@@ -1048,10 +1166,30 @@ app.get('/api/demo/status', apiLimiter, (req, res) => {
   });
 });
 
-app.post('/api/setup/initialize', apiLimiter, csrfProtection, [
-  body('organisationName').trim().isLength({ min: 1, max: 200 }).withMessage('Organisation name is required and must be less than 200 characters'),
-  body('adminEmail').isEmail({ allow_display_name: false, require_tld: false }).withMessage('Valid email required'),
-  body('adminPassword').isLength({ min: 8 }).withMessage('Password must be at least 8 characters')
+// Setup creates the owner account on an empty database, which on a public host anyone could
+// reach first. Production therefore requires the one-time SETUP_TOKEN from the server env.
+const sha256 = (value) => crypto.createHash('sha256').update(String(value), 'utf8').digest();
+const requireSetupToken = (req, res, next) => {
+  if (!config.isProd && !config.setupToken) return next();
+  if (!config.setupToken) {
+    return res.status(403).json({ code: 'SETUP_LOCKED', error: 'Setup is locked. Set SETUP_TOKEN on the server and reload.' });
+  }
+  const provided = typeof req.body.setupToken === 'string' ? req.body.setupToken : '';
+  if (!crypto.timingSafeEqual(sha256(provided), sha256(config.setupToken))) {
+    return res.status(403).json({ code: 'SETUP_TOKEN', error: 'Setup token did not match. Check SETUP_TOKEN on the server.' });
+  }
+  next();
+};
+
+app.post('/api/setup/initialize', apiLimiter, csrfProtection, requireSetupToken, [
+  // isString first: the standard validators pass an array whose items pass, and the handler
+  // then calls string methods on it.
+  body('organisationName').isString().withMessage('Organisation name is required and must be less than 200 characters').bail()
+    .trim().isLength({ min: 1, max: 200 }).withMessage('Organisation name is required and must be less than 200 characters'),
+  body('adminEmail').isString().withMessage('Valid email required').bail()
+    .isEmail({ allow_display_name: false, require_tld: false }).withMessage('Valid email required'),
+  body('adminPassword').isString().withMessage('Use at least 12 characters.').bail()
+    .isLength({ min: 12 }).withMessage('Use at least 12 characters.')
 ], handleValidationErrors, async (req, res, next) => {
   // Only allow setup if no users exist
   db.get("SELECT COUNT(*) as count FROM users", [], async (err, row) => {
@@ -1117,28 +1255,13 @@ app.post('/api/setup/initialize', apiLimiter, csrfProtection, [
               await dbRun("INSERT INTO organisation_settings (organisation_id, key, value, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)", [orgId, 'allow_links_customisation', 'true']);
               await dbRun("INSERT INTO organisation_settings (organisation_id, key, value, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)", [orgId, 'allow_privacy_customisation', 'true']);
               await dbRun("INSERT INTO organisation_settings (organisation_id, key, value, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)", [orgId, 'allow_send_details_customisation', 'true']);
+              await logAudit('setup_completed', 'auth', userId, {}, userId, orgId);
             } catch (err) {
               return next(err);
             }
             
-            // Generate JWT token
-            const token = jwt.sign(
-              {
-                user_id: userId,
-                organisation_id: orgId,
-                role: 'owner'
-              },
-              JWT_SECRET,
-              { expiresIn: JWT_EXPIRES_IN }
-            );
-            
-            // Set httpOnly cookie
-            res.cookie('authToken', token, {
-              httpOnly: true,
-              secure: NODE_ENV === 'production',
-              sameSite: 'strict',
-              maxAge: 24 * 60 * 60 * 1000 // 24 hours
-            });
+            // A new user starts at session_version 0 (the column default)
+            setAuthCookie(res, signSession({ userId, organisationId: orgId, role: 'owner', sessionVersion: 0 }));
             
             res.json({ success: true, userId, email: adminEmail.toLowerCase(), role: 'owner' });
           });
@@ -1150,6 +1273,10 @@ app.post('/api/setup/initialize', apiLimiter, csrfProtection, [
   });
 });
 
+// Cost 10 is the cost of every hash the server and scripts/set-password.js store, so comparing against
+// it takes as long as a real check (test/unit/password-cost.test.js holds them to one cost).
+const DUMMY_PASSWORD_HASH = bcrypt.hashSync(require('crypto').randomBytes(16).toString('hex'), 10);
+
 // Login
 app.post('/api/login', loginLimiter, [
   body('email').custom((value) => {
@@ -1159,49 +1286,28 @@ app.post('/api/login', loginLimiter, [
     }
     throw new Error('Valid email required');
   }),
-  body('password').notEmpty().withMessage('Password is required')
+  // bcrypt rejects a non-string, so a number or array password must stop here as a 400.
+  body('password').isString().withMessage('Password is required').bail().notEmpty().withMessage('Password is required')
 ], handleValidationErrors, async (req, res, next) => {
   try {
     const { email, password } = req.body;
-    
-    // Look up user by email
-    db.get("SELECT id, email, password_hash, organisation_id, role FROM users WHERE email = ?", [email.toLowerCase()], async (err, user) => {
-      if (err) {
-        return next(err);
-      }
-      
-      // If no user found, return error
-      if (!user) {
-        return res.status(401).json({ error: 'Invalid email or password' });
-      }
+    const user = await dbGet("SELECT id, email, password_hash, organisation_id, role, session_version FROM users WHERE email = ?", [email.toLowerCase()]);
 
-      // Verify password
-      const passwordMatch = await bcrypt.compare(password, user.password_hash);
-      if (!passwordMatch) {
-        return res.status(401).json({ error: 'Invalid email or password' });
-      }
-      
-      // Generate JWT token
-      const token = jwt.sign(
-        {
-          user_id: user.id,
-          organisation_id: user.organisation_id,
-          role: user.role
-        },
-        JWT_SECRET,
-        { expiresIn: JWT_EXPIRES_IN }
-      );
-      
-      // Set httpOnly cookie
-      res.cookie('authToken', token, {
-        httpOnly: true,
-        secure: NODE_ENV === 'production',
-        sameSite: 'strict',
-        maxAge: 24 * 60 * 60 * 1000 // 24 hours
-      });
-      
-      res.json({ success: true });
-    });
+    // An unknown email pays the same bcrypt cost, so the response time does not show which
+    // address is the admin login.
+    const passwordMatch = await bcrypt.compare(password, user ? user.password_hash : DUMMY_PASSWORD_HASH);
+    if (!user || !passwordMatch) {
+      return res.status(401).json({ error: 'Invalid email or password' });
+    }
+
+    setAuthCookie(res, signSession({
+      userId: user.id,
+      organisationId: user.organisation_id,
+      role: user.role,
+      sessionVersion: user.session_version
+    }));
+
+    res.json({ success: true });
   } catch (err) {
     next(err);
   }
@@ -1211,6 +1317,21 @@ app.post('/api/login', loginLimiter, [
 app.post('/api/logout', (req, res) => {
   res.clearCookie('authToken');
   res.json({ success: true });
+});
+
+// Sign out everywhere: every JWT minted before the bump fails the session_version check
+app.post('/api/auth/logout-all', requireAuth, apiLimiter, csrfProtection, async (req, res, next) => {
+  if (!req.user.id) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  try {
+    await dbRun('UPDATE users SET session_version = session_version + 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [req.user.id]);
+    await logAudit('sessions_revoked', 'auth', req.user.id, {}, req.user.id, req.user.organisationId);
+    res.clearCookie('authToken');
+    res.json({ success: true });
+  } catch (err) {
+    next(err);
+  }
 });
 
 // Image Upload Endpoint
@@ -1317,7 +1438,9 @@ app.get('/api/auth/me', requireAuth, apiLimiter, (req, res, next) => {
         organisationId: user.organisation_id,
         role: user.role,
         emailVerified: user.email_verified === 1,
-        orgSlug: user.org_slug || null
+        orgSlug: user.org_slug || null,
+        // Status headlines are written in ADMIN_TIME_ZONE; the SPA uses the same zone so one screen shows one clock.
+        timeZone: config.timeZone
       });
     }
   );
@@ -1706,6 +1829,7 @@ app.get('/api/admin/cards', requireAuth, apiLimiter, (req, res, next) => {
 // GET Short Code Card (Public endpoint - short code lookup)
 // MUST come FIRST before other /api/cards routes to avoid route conflicts
 const shortCodeLimiter = rateLimit({
+  keyGenerator: keyByIp,
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 100, // 100 requests per window
   message: 'Too many short code lookup attempts',
@@ -2623,8 +2747,8 @@ app.get('/api/admin/users', requireAuth, requireRole('owner'), apiLimiter, (req,
 
 // POST Create User (Manual creation by owner)
 app.post('/api/admin/users', requireAuth, requireRole('owner'), apiLimiter, csrfProtection, [
-  body('email').isEmail({ allow_display_name: false, require_tld: false }).withMessage('Valid email required'),
-  body('password').isLength({ min: 8 }).withMessage('Password must be at least 8 characters'),
+  body('email').isString().withMessage('Valid email required').bail().isEmail({ allow_display_name: false, require_tld: false }).withMessage('Valid email required'),
+  body('password').isString().withMessage('Password must be at least 8 characters').bail().isLength({ min: 8 }).withMessage('Password must be at least 8 characters'),
   body('role').isIn(['owner', 'member']).withMessage('Role must be owner or member')
 ], handleValidationErrors, async (req, res, next) => {
   if (!req.user.organisationId) {
@@ -2907,19 +3031,18 @@ app.post('/api/admin/invitations', requireAuth, requireRole('owner'), apiLimiter
     try {
       if (emailTransporter) {
         const invitationUrl = `${APP_URL}/invite/${token}`;
-        const emailHtml = `
-          <h2>You've been invited to join ${orgName}</h2>
-          <p>You've been invited to join ${orgName} on Swiish. Click the link below to accept the invitation and create your account.</p>
-          <p><a href="${invitationUrl}" style="background-color: #4f46e5; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">Accept Invitation</a></p>
-          <p>This invitation will expire in 7 days.</p>
-          <p>If you didn't expect this invitation, you can safely ignore this email.</p>
-        `;
-        const emailText = `You've been invited to join ${orgName} on Swiish. Visit ${invitationUrl} to accept the invitation. This invitation expires in 7 days.`;
+        const emailHtml = renderEmail({
+          heading: `Join ${orgName} on the donatelli.tech admin.`,
+          paragraph: `${orgName} invited you to the donatelli.tech admin. Accept the invitation to create your account.`,
+          action: { href: invitationUrl, label: 'Accept invitation' },
+          footnote: 'The invitation expires in 7 days. If you did not expect it, ignore this email.'
+        });
+        const emailText = `${orgName} invited you to the donatelli.tech admin. Accept the invitation at ${invitationUrl}. It expires in 7 days.`;
 
         await emailTransporter.sendMail({
           from: SMTP_FROM,
           to: emailLower,
-          subject: `Invitation to join ${orgName} on Swiish`,
+          subject: `${orgName} invited you to the donatelli.tech admin`,
           text: emailText,
           html: emailHtml
         });
@@ -2999,7 +3122,7 @@ app.get('/api/invitations/:token', publicReadLimiter, [
 // POST Accept Invitation
 app.post('/api/invitations/:token/accept', publicReadLimiter, [
   param('token').isLength({ min: 64, max: 64 }).withMessage('Invalid invitation token'),
-  body('password').isLength({ min: 8 }).withMessage('Password must be at least 8 characters')
+  body('password').isString().withMessage('Password must be at least 8 characters').bail().isLength({ min: 8 }).withMessage('Password must be at least 8 characters')
 ], handleValidationErrors, async (req, res, next) => {
   const { token } = req.params;
   const { password } = req.body;
@@ -3062,24 +3185,12 @@ app.post('/api/invitations/:token/accept', publicReadLimiter, [
                   }
                 }
                 
-                // Generate JWT token
-                const jwtToken = jwt.sign(
-                  {
-                    user_id: userId,
-                    organisation_id: invitation.organisation_id,
-                    role: invitation.role
-                  },
-                  JWT_SECRET,
-                  { expiresIn: JWT_EXPIRES_IN }
-                );
-                
-                // Set httpOnly cookie
-                res.cookie('authToken', jwtToken, {
-                  httpOnly: true,
-                  secure: NODE_ENV === 'production',
-                  sameSite: 'strict',
-                  maxAge: 24 * 60 * 60 * 1000 // 24 hours
-                });
+                setAuthCookie(res, signSession({
+                  userId,
+                  organisationId: invitation.organisation_id,
+                  role: invitation.role,
+                  sessionVersion: 0
+                }));
                 
                 res.json({ success: true, userId, email: invitation.email, role: invitation.role });
               }
@@ -3225,19 +3336,18 @@ app.post('/api/admin/invitations/:invitationId/retry', requireAuth, requireRole(
     try {
       if (emailTransporter) {
         const invitationUrl = `${APP_URL}/invite/${invitation.token}`;
-        const emailHtml = `
-          <h2>You've been invited to join ${invitation.org_name}</h2>
-          <p>You've been invited to join ${invitation.org_name} on Swiish. Click the link below to accept the invitation and create your account.</p>
-          <p><a href="${invitationUrl}" style="background-color: #4f46e5; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">Accept Invitation</a></p>
-          <p>This invitation will expire in 7 days.</p>
-          <p>If you didn't expect this invitation, you can safely ignore this email.</p>
-        `;
-        const emailText = `You've been invited to join ${invitation.org_name} on Swiish. Visit ${invitationUrl} to accept the invitation. This invitation expires in 7 days.`;
+        const emailHtml = renderEmail({
+          heading: `Join ${invitation.org_name} on the donatelli.tech admin.`,
+          paragraph: `${invitation.org_name} invited you to the donatelli.tech admin. Accept the invitation to create your account.`,
+          action: { href: invitationUrl, label: 'Accept invitation' },
+          footnote: 'The invitation expires in 7 days. If you did not expect it, ignore this email.'
+        });
+        const emailText = `${invitation.org_name} invited you to the donatelli.tech admin. Accept the invitation at ${invitationUrl}. It expires in 7 days.`;
 
         await emailTransporter.sendMail({
           from: SMTP_FROM,
           to: invitation.email,
-          subject: `Invitation to join ${invitation.org_name} on Swiish`,
+          subject: `${invitation.org_name} invited you to the donatelli.tech admin`,
           text: emailText,
           html: emailHtml
         });
@@ -3285,162 +3395,153 @@ app.post('/api/admin/invitations/:invitationId/retry', requireAuth, requireRole(
 
 // POST Forgot Password (Request password reset)
 app.post('/api/auth/forgot-password', apiLimiter, [
-  body('email').isEmail().withMessage('Valid email required')
+  // isString first: isEmail passes an array of addresses, and toLowerCase on it would throw.
+  body('email').isString().withMessage('Valid email required').bail().isEmail().withMessage('Valid email required')
 ], handleValidationErrors, async (req, res, next) => {
-  const { email } = req.body;
-  const emailLower = email.toLowerCase();
-  
-  // Find user by email
-  db.get("SELECT id, email FROM users WHERE email = ?", [emailLower], async (err, user) => {
-    if (err) return next(err);
-    
+  const message = 'If an account exists with this email, a password reset link has been sent';
+  try {
+    const emailLower = req.body.email.toLowerCase();
+    const user = await dbGet("SELECT id, email FROM users WHERE email = ?", [emailLower]);
+
     // Always return success (don't reveal if email exists)
     if (!user) {
-      return res.json({ success: true, message: 'If an account exists with this email, a password reset link has been sent' });
+      return res.json({ success: true, message });
     }
-    
+
     // Generate secure token
     const token = require('crypto').randomBytes(32).toString('hex');
     const tokenId = require('crypto').randomUUID();
     const expiresAt = new Date();
     expiresAt.setHours(expiresAt.getHours() + 1); // 1 hour expiry
-    
+
     // Delete any existing unused tokens for this user
-    db.run("DELETE FROM password_reset_tokens WHERE user_id = ? AND used_at IS NULL", [user.id], (err) => {
-      if (err) {
-        console.error('Error deleting old tokens:', err);
-        // Continue anyway
-      }
-      
-      // Create password reset token
-      db.run(
-        "INSERT INTO password_reset_tokens (id, user_id, token, expires_at) VALUES (?, ?, ?, ?)",
-        [tokenId, user.id, token, expiresAt.toISOString()],
-        async (err) => {
-          if (err) return next(err);
-          
-          // Send password reset email
-          const resetUrl = `${APP_URL}/reset-password/${token}`;
-          const emailHtml = `
-            <h2>Password Reset Request</h2>
-            <p>You requested to reset your password for your Swiish account. Click the link below to reset your password:</p>
-            <p><a href="${resetUrl}" style="background-color: #4f46e5; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">Reset Password</a></p>
-            <p>This link will expire in 1 hour.</p>
-            <p>If you didn't request a password reset, you can safely ignore this email.</p>
-          `;
-          const emailText = `You requested to reset your password. Visit ${resetUrl} to reset it. This link expires in 1 hour.`;
-          
-          try {
-            if (emailTransporter) {
-              await emailTransporter.sendMail({
-                from: SMTP_FROM,
-                to: emailLower,
-                subject: 'Reset your Swiish password',
-                text: emailText,
-                html: emailHtml
-              });
-            }
-          } catch (emailErr) {
-            console.error('Failed to send password reset email:', emailErr);
-            // Don't fail the request if email fails
-          }
-          
-          res.json({ success: true, message: 'If an account exists with this email, a password reset link has been sent' });
-        }
-      );
-    });
-  });
+    try {
+      await dbRun("DELETE FROM password_reset_tokens WHERE user_id = ? AND used_at IS NULL", [user.id]);
+    } catch (err) {
+      console.error('Error deleting old tokens:', err);
+      // Continue anyway
+    }
+
+    await dbRun(
+      "INSERT INTO password_reset_tokens (id, user_id, token, expires_at) VALUES (?, ?, ?, ?)",
+      [tokenId, user.id, token, expiresAt.toISOString()]
+    );
+
+    // Answer before the SMTP round trip, so a known address does not respond slower than an
+    // unknown one.
+    res.json({ success: true, message });
+
+    if (emailTransporter) {
+      const resetUrl = `${APP_URL}/reset-password/${token}`;
+      const emailHtml = renderEmail({
+        heading: 'Reset your password.',
+        paragraph: 'A password reset was requested for this email on the donatelli.tech admin.',
+        action: { href: resetUrl, label: 'Set new password' },
+        footnote: 'The link expires in 1 hour. If you did not request it, ignore this email; your password stays the same.'
+      });
+      const emailText = `A password reset was requested for this email on the donatelli.tech admin. Set a new password at ${resetUrl}. The link expires in 1 hour. If you did not request it, ignore this email; your password stays the same.`;
+      // Not awaited, so the catch is what keeps a failed send from becoming an unhandled rejection.
+      Promise.resolve()
+        .then(() => emailTransporter.sendMail({
+          from: SMTP_FROM,
+          to: emailLower,
+          subject: 'Reset your donatelli.tech admin password',
+          text: emailText,
+          html: emailHtml
+        }))
+        .catch((emailErr) => console.error('Failed to send password reset email:', emailErr));
+    }
+  } catch (err) {
+    if (!res.headersSent) next(err);
+    else console.error('Password reset request failed after the response:', err);
+  }
 });
 
 // POST Reset Password (with token)
 app.post('/api/auth/reset-password', apiLimiter, [
-  body('token').isLength({ min: 64, max: 64 }).withMessage('Invalid reset token'),
-  body('password').isLength({ min: 8 }).withMessage('Password must be at least 8 characters')
+  body('token').isString().withMessage('Invalid reset token').bail().isLength({ min: 64, max: 64 }).withMessage('Invalid reset token'),
+  // isLength alone passes an object ("[object Object]" is 15 characters); bcrypt then rejects it.
+  body('password').isString().withMessage('Use at least 12 characters.').bail().isLength({ min: 12 }).withMessage('Use at least 12 characters.')
 ], handleValidationErrors, async (req, res, next) => {
   const { token, password } = req.body;
-  
-  // Get reset token
-  db.get(
-    "SELECT prt.*, u.id as user_id FROM password_reset_tokens prt JOIN users u ON prt.user_id = u.id WHERE prt.token = ?",
-    [token],
-    async (err, resetToken) => {
-      if (err) return next(err);
-      if (!resetToken) {
-        return res.status(400).json({ error: 'Invalid or expired reset token' });
-      }
-      if (resetToken.used_at) {
-        return res.status(400).json({ error: 'This reset token has already been used' });
-      }
-      if (new Date(resetToken.expires_at) < new Date()) {
-        return res.status(400).json({ error: 'Reset token has expired' });
-      }
-      
-      // Hash new password
-      const passwordHash = await bcrypt.hash(password, 10);
-      
-      // Update user password
-      db.run(
-        "UPDATE users SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-        [passwordHash, resetToken.user_id],
-        (err) => {
-          if (err) return next(err);
-          
-          // Mark token as used
-          db.run(
-            "UPDATE password_reset_tokens SET used_at = CURRENT_TIMESTAMP WHERE id = ?",
-            [resetToken.id],
-            (err) => {
-              if (err) {
-                console.error('Failed to mark token as used:', err);
-                // Don't fail the request
-              }
-              
-              res.json({ success: true, message: 'Password has been reset successfully' });
-            }
-          );
-        }
-      );
+  try {
+    const resetToken = await dbGet(
+      "SELECT prt.*, u.id as user_id, u.organisation_id FROM password_reset_tokens prt JOIN users u ON prt.user_id = u.id WHERE prt.token = ?",
+      [token]
+    );
+    if (!resetToken) {
+      return res.status(400).json({ error: 'Invalid or expired reset token' });
     }
-  );
+    if (resetToken.used_at) {
+      return res.status(400).json({ error: 'This reset token has already been used' });
+    }
+    if (new Date(resetToken.expires_at) < new Date()) {
+      return res.status(400).json({ error: 'Reset token has expired' });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 10);
+
+    // Update user password; bumping session_version signs out every existing session
+    await dbRun(
+      "UPDATE users SET password_hash = ?, session_version = session_version + 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+      [passwordHash, resetToken.user_id]
+    );
+
+    try {
+      await dbRun("UPDATE password_reset_tokens SET used_at = CURRENT_TIMESTAMP WHERE id = ?", [resetToken.id]);
+    } catch (err) {
+      console.error('Failed to mark token as used:', err);
+      // Don't fail the request
+    }
+
+    await logAudit('password_reset', 'auth', resetToken.user_id, {}, resetToken.user_id, resetToken.organisation_id);
+    res.json({ success: true, message: 'Password has been reset successfully' });
+  } catch (err) {
+    next(err);
+  }
 });
 
 // POST Change Password (when logged in)
 app.post('/api/auth/change-password', requireAuth, apiLimiter, csrfProtection, [
-  body('currentPassword').notEmpty().withMessage('Current password is required'),
-  body('newPassword').isLength({ min: 8 }).withMessage('New password must be at least 8 characters')
+  body('currentPassword').isString().withMessage('Current password is required').bail().notEmpty().withMessage('Current password is required'),
+  body('newPassword').isString().withMessage('Use at least 12 characters.').bail().isLength({ min: 12 }).withMessage('Use at least 12 characters.')
 ], handleValidationErrors, async (req, res, next) => {
   if (!req.user.id) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
-  
+
   const { currentPassword, newPassword } = req.body;
-  
-  // Get user
-  db.get("SELECT password_hash FROM users WHERE id = ?", [req.user.id], async (err, user) => {
-    if (err) return next(err);
+
+  try {
+    const user = await dbGet("SELECT password_hash FROM users WHERE id = ?", [req.user.id]);
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
-    
-    // Verify current password
+
     const passwordMatch = await bcrypt.compare(currentPassword, user.password_hash);
     if (!passwordMatch) {
       return res.status(401).json({ error: 'Current password is incorrect' });
     }
-    
-    // Hash new password
+
     const passwordHash = await bcrypt.hash(newPassword, 10);
-    
-    // Update password
-    db.run(
-      "UPDATE users SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-      [passwordHash, req.user.id],
-      (err) => {
-        if (err) return next(err);
-        res.json({ success: true, message: 'Password has been changed successfully' });
-      }
+
+    // The bump signs out every other session; this one gets a fresh cookie below.
+    await dbRun(
+      "UPDATE users SET password_hash = ?, session_version = session_version + 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+      [passwordHash, req.user.id]
     );
-  });
+    const { session_version: sessionVersion } = await dbGet('SELECT session_version FROM users WHERE id = ?', [req.user.id]);
+    setAuthCookie(res, signSession({
+      userId: req.user.id,
+      organisationId: req.user.organisationId,
+      role: req.user.role,
+      sessionVersion
+    }));
+    await logAudit('password_changed', 'auth', req.user.id, {}, req.user.id, req.user.organisationId);
+    res.json({ success: true, message: 'Password has been changed successfully' });
+  } catch (err) {
+    next(err);
+  }
 });
 
 // --- EMAIL VERIFICATION ENDPOINTS ---
@@ -3486,21 +3587,20 @@ app.post('/api/auth/send-verification', requireAuth, apiLimiter, csrfProtection,
             
             // Send verification email
             const verifyUrl = `${APP_URL}/verify-email/${token}`;
-            const emailHtml = `
-              <h2>Verify Your Email Address</h2>
-              <p>Please verify your email address by clicking the link below:</p>
-              <p><a href="${verifyUrl}" style="background-color: #4f46e5; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">Verify Email</a></p>
-              <p>This link will expire in 7 days.</p>
-              <p>If you didn't create an account, you can safely ignore this email.</p>
-            `;
-            const emailText = `Please verify your email address by visiting ${verifyUrl}. This link expires in 7 days.`;
+            const emailHtml = renderEmail({
+              heading: 'Verify your email.',
+              paragraph: 'Confirm this address for your donatelli.tech admin account.',
+              action: { href: verifyUrl, label: 'Verify email' },
+              footnote: 'The link expires in 7 days. If you did not create an account, ignore this email.'
+            });
+            const emailText = `Confirm this address for your donatelli.tech admin account at ${verifyUrl}. The link expires in 7 days.`;
             
             try {
               if (emailTransporter) {
                 await emailTransporter.sendMail({
                   from: SMTP_FROM,
                   to: user.email,
-                  subject: 'Verify your Swiish email address',
+                  subject: 'Verify your email for the donatelli.tech admin',
                   text: emailText,
                   html: emailHtml
                 });
@@ -3750,8 +3850,8 @@ app.get('/icons/:slug.svg', publicReadLimiter, [
   });
 });
 
-// Admin endpoint to view logs
-app.get('/api/admin/logs', requireAuth, apiLimiter, (req, res, next) => {
+// Admin endpoint to view logs (owner only: log lines can hold account emails)
+app.get('/api/admin/logs', requireAuth, requireRole('owner'), apiLimiter, (req, res, next) => {
   try {
     // Return last 100 lines
     const recentLogs = logLines.slice(-100);
@@ -3884,6 +3984,92 @@ app.post('/api/qr/:identifier', publicReadLimiter, [
     next(err);
   }
 });
+
+// Liveness for the Docker HEALTHCHECK: no auth and nothing about the instance
+app.get('/api/health', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.json({ ok: true });
+});
+
+// Activity feed for the admin. Only the donatelli entity types are listed: upstream events
+// such as user_deleted snapshot whole rows, and their data stays out of this feed.
+const AUDIT_ENTITY_TYPES = ['connection', 'site', 'auth'];
+// SQLite CURRENT_TIMESTAMP is UTC written without a zone marker
+const sqliteUtcToIso = (value) => (value ? new Date(value.replace(' ', 'T') + 'Z').toISOString() : null);
+
+// A repeated query key arrives as an array, which the checks would accept item by item.
+const singleQuery = (name, message) => queryParam(name).optional().not().isArray().withMessage(message).bail();
+
+app.get('/api/admin/audit', requireAuth, requireRole('owner'), adminReadLimiter, [
+  singleQuery('entity_type', 'entity_type must be connection, site or auth.')
+    .isIn(AUDIT_ENTITY_TYPES).withMessage('entity_type must be connection, site or auth.'),
+  singleQuery('limit', 'limit must be a whole number from 1 to 100.')
+    .isInt({ min: 1, max: 100 }).withMessage('limit must be a whole number from 1 to 100.'),
+  singleQuery('before', 'before must be an ISO 8601 time.')
+    .isISO8601().withMessage('before must be an ISO 8601 time.'),
+  singleQuery('before_id', 'before_id must be the id of the last row shown, sent with its before time.')
+    .isUUID().withMessage('before_id must be the id of the last row shown, sent with its before time.')
+    .custom((value, { req }) => typeof req.query.before === 'string')
+    .withMessage('before_id must be the id of the last row shown, sent with its before time.')
+], handleValidationErrors, async (req, res, next) => {
+  res.set('Cache-Control', 'no-store');
+  if (!req.user.organisationId) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  try {
+    const types = req.query.entity_type ? [req.query.entity_type] : AUDIT_ENTITY_TYPES;
+    // Rows written without an organisation (system jobs such as the retention purge) belong
+    // to this single-organisation instance.
+    const params = [req.user.organisationId, ...types];
+    let sql = `SELECT id, event_type, entity_type, entity_id, entity_data, performed_at FROM audit_log
+      WHERE (organisation_id = ? OR organisation_id IS NULL)
+        AND entity_type IN (${types.map(() => '?').join(', ')})`;
+    if (req.query.before && req.query.before_id) {
+      // performed_at has one-second precision, so rows written in the cursor row's second are
+      // told apart by rowid, the same tiebreak the ORDER BY uses; the time alone would skip them.
+      sql += ' AND (performed_at < datetime(?) OR (performed_at = datetime(?) AND rowid < (SELECT rowid FROM audit_log WHERE id = ?)))';
+      params.push(req.query.before, req.query.before, req.query.before_id);
+    } else if (req.query.before) {
+      sql += ' AND performed_at < datetime(?)';
+      params.push(req.query.before);
+    }
+    sql += ' ORDER BY performed_at DESC, rowid DESC LIMIT ?';
+    params.push(req.query.limit ? Number(req.query.limit) : 50);
+
+    const rows = await dbAll(sql, params);
+    res.json({
+      items: rows.map((row) => {
+        let data = null;
+        try {
+          data = row.entity_data ? JSON.parse(row.entity_data) : null;
+        } catch (err) {
+          data = null;
+        }
+        return {
+          id: row.id,
+          eventType: row.event_type,
+          entityType: row.entity_type,
+          entityId: row.entity_id,
+          data,
+          performedAt: sqliteUtcToIso(row.performed_at)
+        };
+      })
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Contract shared with lib/connections.js (U3) and lib/site-admin.js (U4)
+const deps = {
+  express, db, dbRun, dbGet, dbAll, dbRunInfo,
+  logAudit, log, requireAuth, requireRole, csrfProtection, handleValidationErrors,
+  rateLimit, keyByUser,
+  config, emailTransporter, escapeXml, fetch: globalThis.fetch, now: () => new Date(),
+};
+
+const connections = require('./lib/connections').register(app, deps);
+require('./lib/site-admin').register(app, deps);
 
 // Error handling middleware (must be last)
 app.use(errorHandler);
@@ -4018,31 +4204,8 @@ app.get('*', publicReadLimiter, async (req, res, next) => {
     const indexPath = path.join(__dirname, 'build', 'index.html');
     let html = await fs.promises.readFile(indexPath, 'utf8');
 
-    // Try to detect card page and inject meta tags
-    // Patterns:
-    // 1. /{shortCode} - 7 alphanumeric characters (primary)
-    // 2. /{orgSlug}/{cardSlug} - organization scoped
-    // 3. /{slug} - legacy pattern (deprecated but still supported)
-
-    const pathParts = req.path.slice(1).split('/').filter(p => p.length > 0);
-
-    // Pattern 1: Short code (7 characters exactly)
-    const isShortCode = pathParts.length === 1 && /^[a-zA-Z0-9]{7}$/.test(pathParts[0]);
-    if (isShortCode) {
-      const shortCode = pathParts[0];
-      html = await injectMetaTags(html, shortCode, shortCode);
-    }
-    // Pattern 2: Organization-scoped /{orgSlug}/{cardSlug}
-    else if (pathParts.length === 2) {
-      const [orgSlug, cardSlug] = pathParts;
-      // Look up by org + card slug combination
-      html = await injectMetaTags(html, cardSlug, `${orgSlug}/${cardSlug}`);
-    }
-    // Pattern 3: Legacy slug (anything that's not a short code and not org-scoped)
-    else if (pathParts.length === 1) {
-      const slug = pathParts[0];
-      html = await injectMetaTags(html, slug, slug);
-    }
+    // No card meta tags (injectMetaTags): this edition serves no public cards, and the
+    // admin paths (/login, /setup, /admin/...) must never read as card slugs.
 
     // Inject nonce into script tags (case-insensitive to catch all variants)
     html = html.replace(
@@ -4525,12 +4688,33 @@ async function runMigrations() {
   }
 }
 
+// In-process backups (BACKUP_INTERVAL_HOURS > 0). The first one runs after one interval, not
+// at boot, so a crash loop cannot rotate the good backups out with a burst of new ones.
+function startBackupTimer() {
+  if (config.backup.intervalHours <= 0) return null;
+  const { runBackup } = require('./scripts/backup-db');
+  const timer = setInterval(() => {
+    runBackup({
+      dbFile: path.join(DATA_DIR, DB_FILENAME),
+      dir: path.join(DATA_DIR, 'backups'),
+      keep: config.backup.keep
+    })
+      .then(({ file, removed }) => log('[backup] Database backup written', { file: path.basename(file), removed: removed.length }))
+      .catch((err) => log('[backup] Database backup failed', { error: err.message }));
+  }, config.backup.intervalHours * 60 * 60 * 1000);
+  timer.unref();
+  return timer;
+}
+
 // Run migrations and start server
 // IMPORTANT: Wait for migrations to complete before accepting requests
 // This ensures DEMO_USER_ID is set before auth middleware runs in demo mode
 (async () => {
   try {
     await runMigrations();
+
+    connections.startTimers();
+    const backupTimer = startBackupTimer();
 
     const server = app.listen(PORT, () => {
       // Startup logs are always useful, keep them
@@ -4544,6 +4728,9 @@ async function runMigrations() {
     // Graceful shutdown handler to close database connection
     function gracefulShutdown(signal) {
       console.log(`\n${signal} received. Closing database connection and shutting down gracefully...`);
+
+      connections.stopTimers();
+      if (backupTimer) clearInterval(backupTimer);
 
       // Close database connection
       db.close((err) => {

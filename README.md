@@ -1,3 +1,48 @@
+# donatelli.tech admin (a fork of Swiish)
+
+This repository is the **donatelli edition** of [Swiish](https://github.com/MrCrin/swiish) 0.7.0:
+the admin back office for [donatelli.tech](https://donatelli.tech). It is where the owner logs
+in, edits the contact card and site facts, publishes the website through GitHub Actions, and
+reads the details visitors send from the card. It is not the official Swiish and is not
+endorsed by its author.
+
+What differs from upstream:
+
+- The public card lives on donatelli.tech as a static page. This server turns off every Swiish
+  public card surface (cards, QR, manifests, icons, uploads, invitations) and marks every
+  response `noindex`.
+- Production refuses to start on unsafe settings, sessions can be revoked, and `/setup` needs a
+  one-time `SETUP_TOKEN`.
+- The fork builds its own Docker image, commits `package-lock.json`, and has tests and CI.
+
+Start here:
+
+- [docs/donatelli-deploy.md](docs/donatelli-deploy.md): hosting assumptions, environment,
+  backups and recovery.
+- [NOTICE.md](NOTICE.md): the AGPL-3.0 modification notice and trademark position.
+- [COPYING](COPYING): the full AGPL-3.0 text. Source: <https://github.com/Njdonatelli/donatelli.swiish>.
+- [DOCKER.md](DOCKER.md) and the sections below describe upstream Swiish (its images, demo and
+  card features) and are kept unchanged for reference.
+
+Run the tests (Bash/Zsh, Node 22, in the repository directory):
+
+```bash
+npm ci && npm test
+```
+
+Success: `npm ci` prints `added … packages`, and the test summary ends with `# fail 0`.
+
+The end-to-end run drives every screen in a real browser. It needs a `donatelli-website` checkout beside this
+repository (or `E2E_WEBSITE_DIR`) and Playwright's Chromium:
+
+```bash
+npx playwright install chromium && CI=true npm run build && npm run test:e2e
+```
+
+Success: the last line reads `e2e: N screens and checks, no problems`.
+
+---
+
 # Swiish
 
 </br><p align="left">

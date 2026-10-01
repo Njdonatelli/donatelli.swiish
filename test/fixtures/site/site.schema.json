@@ -1,0 +1,64 @@
+{
+  "$comment": "Rules for data/site.json. Read by tools/site-schema.mjs (build, authoritative) and by the admin server (lib/site-schema.js, fetched from GitHub). Supported keywords: type, const, enum, properties, required, additionalProperties:false, items, minLength, maxLength, pattern, minimum, maximum, minItems, maxItems, x-plainText (true on the root reaches every string; false on a node turns it off there), x-readOnly, x-tab, x-group, x-widget, x-patternHint, title, description.",
+  "type": "object",
+  "x-plainText": true,
+  "additionalProperties": false,
+  "required": ["_meta", "name", "alternateNames", "tagline", "bookingUrl", "contactEmail", "owner", "sameAs", "ownerSameAs", "year", "card"],
+  "properties": {
+    "_meta": {
+      "type": "object", "x-readOnly": true, "additionalProperties": false, "required": ["rule", "schema"],
+      "properties": {
+        "rule": { "type": "string", "maxLength": 300 },
+        "schema": { "type": "string", "const": "data/site.schema.json" }
+      }
+    },
+    "name": { "type": "string", "const": "donatelli.tech", "x-readOnly": true, "x-tab": "website", "x-group": "Brand", "title": "Brand name" },
+    "alternateNames": { "type": "array", "maxItems": 5, "items": { "type": "string", "minLength": 1, "maxLength": 60 }, "x-readOnly": true, "x-tab": "website", "x-group": "Brand", "title": "Alternate names" },
+    "tagline": { "type": "string", "minLength": 3, "maxLength": 60, "x-tab": "website", "x-group": "Brand", "title": "Tagline", "description": "Footer line and home page eyebrow." },
+    "bookingUrl": { "type": ["string", "null"], "maxLength": 200, "pattern": "^https://(app\\.)?cal\\.com/[A-Za-z0-9._~/-]+$", "x-patternHint": "Use a Cal.com link (https://cal.com/...). The site's security policy only allows Cal.com.", "x-tab": "card", "x-group": "Contact", "title": "Booking link" },
+    "contactEmail": { "type": "string", "maxLength": 254, "pattern": "^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)*\\.[A-Za-z]{2,}$", "x-patternHint": "Use an address like name@domain.tld.", "x-tab": "card", "x-group": "Contact", "title": "Public email", "description": "Also the Contact line in /.well-known/security.txt, so it cannot be left empty." },
+    "owner": {
+      "type": "object", "additionalProperties": false,
+      "required": ["name", "givenName", "familyName", "jobTitle", "city", "region", "regionName", "country", "photo", "photoSmall"],
+      "properties": {
+        "name": { "type": "string", "minLength": 3, "maxLength": 80, "x-tab": "card", "x-group": "Person", "title": "Full name", "description": "Given name, a space, then family name." },
+        "givenName": { "type": "string", "minLength": 1, "maxLength": 40, "x-tab": "card", "x-group": "Person", "title": "Given name" },
+        "familyName": { "type": "string", "minLength": 1, "maxLength": 40, "x-tab": "card", "x-group": "Person", "title": "Family name" },
+        "jobTitle": { "type": "string", "minLength": 3, "maxLength": 80, "x-tab": "card", "x-group": "Person", "title": "Job title" },
+        "city": { "type": "string", "minLength": 2, "maxLength": 60, "x-readOnly": true, "x-tab": "website", "x-group": "Location", "title": "City", "description": "Changed only by a commit to the website repo: page copy in build.mjs (Pacific time, San Diego County) depends on the location." },
+        "region": { "type": "string", "pattern": "^[A-Z]{2}$", "x-patternHint": "Two capital letters, e.g. CA.", "x-readOnly": true, "x-tab": "website", "x-group": "Location", "title": "State code" },
+        "regionName": { "type": "string", "minLength": 2, "maxLength": 40, "x-readOnly": true, "x-tab": "website", "x-group": "Location", "title": "State name" },
+        "country": { "type": "string", "pattern": "^[A-Z]{2}$", "x-readOnly": true, "x-tab": "website", "x-group": "Location", "title": "Country code" },
+        "photo": { "type": "string", "pattern": "^/[a-z0-9-]+\\.webp$", "x-readOnly": true, "x-tab": "card", "x-group": "Person", "title": "Portrait (800px)" },
+        "photoSmall": { "type": "string", "pattern": "^/[a-z0-9-]+\\.webp$", "x-readOnly": true, "x-tab": "card", "x-group": "Person", "title": "Portrait (400px)" }
+      }
+    },
+    "sameAs": { "type": "array", "maxItems": 8, "items": { "type": "string", "maxLength": 500, "pattern": "^https://[A-Za-z0-9.-]+(/[^\\s\"<>`\\u0000-\\u001F\\u007F]*)?$", "x-patternHint": "Use an https:// link with no spaces, quotes, < > or backticks.", "x-plainText": false }, "x-tab": "website", "x-group": "Business profiles", "title": "Business profile links", "description": "Google Business Profile and directories. Feeds the ProfessionalService sameAs." },
+    "ownerSameAs": { "type": "array", "maxItems": 8, "items": { "type": "string", "maxLength": 200, "pattern": "^https://[A-Za-z0-9.-]+(/[^\\s\"<>`\\u0000-\\u001F\\u007F]*)?$", "x-patternHint": "Use an https:// link with no spaces, quotes, < > or backticks.", "x-plainText": false }, "x-tab": "card", "x-group": "Profiles", "title": "Profile links", "description": "LinkedIn, GitHub. Shown on the card and in the Person sameAs." },
+    "year": { "type": "integer", "minimum": 2024, "maximum": 2100, "x-tab": "website", "x-group": "Footer", "title": "Copyright year" },
+    "card": {
+      "type": "object", "additionalProperties": false, "required": ["lede", "links", "showQr", "connect"],
+      "properties": {
+        "lede": { "type": ["string", "null"], "minLength": 3, "maxLength": 160, "x-tab": "card", "x-group": "Card", "title": "Card line", "description": "Empty uses the site slogan." },
+        "links": {
+          "type": "array", "maxItems": 4, "x-tab": "card", "x-group": "Card", "title": "Extra links",
+          "items": { "type": "object", "additionalProperties": false, "required": ["label", "url"],
+            "properties": {
+              "label": { "type": "string", "minLength": 1, "maxLength": 40, "title": "Label" },
+              "url": { "type": "string", "maxLength": 200, "pattern": "^https://[A-Za-z0-9.-]+(/[^\\s\"<>`\\u0000-\\u001F\\u007F]*)?$", "x-patternHint": "Use an https:// link with no spaces, quotes, < > or backticks.", "x-plainText": false, "title": "Link" }
+            } }
+        },
+        "showQr": { "type": "boolean", "x-tab": "card", "x-group": "Card", "title": "Show the QR code" },
+        "connect": {
+          "type": "object", "additionalProperties": false, "required": ["enabled", "intro", "notice", "retentionDays"],
+          "properties": {
+            "enabled": { "type": "boolean", "x-tab": "card", "x-group": "Send me your details", "title": "Show the form", "description": "Needs an approved notice, a retention period, and the card-details section on /security/." },
+            "intro": { "type": ["string", "null"], "minLength": 3, "maxLength": 200, "x-tab": "card", "x-group": "Send me your details", "title": "Intro line" },
+            "notice": { "type": ["string", "null"], "minLength": 40, "maxLength": 400, "x-widget": "textarea", "x-tab": "card", "x-group": "Send me your details", "title": "Privacy notice", "description": "Shown above the button. The retention sentence is added automatically." },
+            "retentionDays": { "type": ["integer", "null"], "minimum": 30, "maximum": 1825, "x-tab": "card", "x-group": "Send me your details", "title": "Keep details for (days)" }
+          }
+        }
+      }
+    }
+  }
+}
