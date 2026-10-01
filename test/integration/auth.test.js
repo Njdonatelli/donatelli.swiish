@@ -103,6 +103,10 @@ describe('a production server', () => {
     assert.equal(res.headers.get('cache-control'), 'no-store');
   });
 
+  test('the data folder, which holds the database and backups, is closed to other local accounts', { skip: process.platform === 'win32' ? 'POSIX modes only' : false }, () => {
+    assert.equal(fs.statSync(path.join(srv.dir, 'data')).mode & 0o077, 0);
+  });
+
   test('the CSP allows only this origin to connect and forbids framing', async () => {
     const csp = (await owner.get('/api/health')).headers.get('content-security-policy');
     assert.match(csp, /connect-src 'self'(;|$)/);

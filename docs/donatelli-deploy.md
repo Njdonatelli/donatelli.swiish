@@ -38,13 +38,25 @@ repository is cloned.
 
    Success: `Cloning into 'donatelli.swiish'...` and the prompt is inside `donatelli.swiish`.
 
-2. Create `.env` from the example, readable by your user only.
+   Check that the clone is the donatelli edition, not upstream Swiish:
 
    ```bash
-   cp .env.example .env && chmod 600 .env
+   grep -cE '^(JWT_SECRET|SETUP_TOKEN|CONNECT_INGEST_SECRET)=$' .env.example
    ```
 
-   Success: no output.
+   Expected output: `3`. If it prints `0`, the fork's default branch `master` is still upstream Swiish: merge the
+   pull request from `claude/donatelli-tech-business-card-7bh9cb` into `master` on GitHub (website runbook, step 1),
+   then run `git pull` here and check again.
+
+2. Create `.env` from the example, readable by your user only, and close the data folder, which will hold the
+   database and the backups with every visitor's details.
+
+   ```bash
+   cp .env.example .env && chmod 600 .env && chmod 700 data && stat -c '%a' .env data
+   ```
+
+   Expected output: `600`, then `700`. The server also closes `data/` itself at every start, which covers a host
+   set up before this step existed.
 
 3. Generate the three secrets into `.env` (each is 48 random bytes, 64 characters).
 
@@ -140,7 +152,7 @@ limit clears after 15 minutes either way.
 ## Environment reference
 
 Secrets are marked **secret**. Never commit them, never put them in a `REACT_APP_*` variable,
-and keep `.env` at mode 600.
+keep `.env` at mode 600 and `./data` at mode 700.
 
 | Variable | Default | Purpose |
 |---|---|---|

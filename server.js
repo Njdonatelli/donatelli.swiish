@@ -143,6 +143,14 @@ const UPLOADS_DIR = path.join(__dirname, 'uploads');
 
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+// data/ holds cards.db and its backups: the owner's password hash and every visitor's details. The
+// container runs as root with umask 022, so files land 0644 on the host's bind mount; closing the
+// folder covers the database, its journal, the backups and a pre-restore copy, on every start.
+try {
+  fs.chmodSync(DATA_DIR, 0o700);
+} catch (err) {
+  console.warn(`Could not restrict ${DATA_DIR} to its owner: ${err.message}`);
+}
 
 // Path validation helper to prevent path traversal attacks
 function validateFilePath(filePath) {
