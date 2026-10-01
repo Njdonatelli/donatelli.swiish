@@ -272,11 +272,15 @@ async function startMockGitHub({
   function afterSuccess(run) {
     if (run.workflow === 'rollback.yml') {
       if (!run.inputs || run.inputs.dry_run !== 'false') return;
-      const list = state.deployments.get(branches.production) || [];
+      // The website's rollback.yml rule: a rollback adds no deployment, so the newest one is not
+      // always live. Find the newest deployment of the live commit, then the next older deployment
+      // of another commit; with none, the real workflow stops and changes nothing.
+      const newestFirst = [...(state.deployments.get(branches.production) || [])].reverse();
       const current = state.live.get(branches.production);
+      const at = current ? newestFirst.findIndex((d) => d.commit === current.commit) : -1;
       const target = run.inputs.deployment_id
-        ? list.find((d) => d.id === run.inputs.deployment_id)
-        : [...list].reverse().find((d) => !current || d.commit !== current.commit);
+        ? newestFirst.find((d) => d.id === run.inputs.deployment_id)
+        : at === -1 ? null : newestFirst.slice(at + 1).find((d) => d.commit !== current.commit);
       if (target) state.live.set(branches.production, { commit: target.commit, builtAt: target.builtAt, source: 'ci', vcard: target.vcard, siteHash: target.siteHash });
       return;
     }

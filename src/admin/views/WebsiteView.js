@@ -314,8 +314,8 @@ export default function WebsiteView({ api }) {
         body={
           <>
             <p>
-              Cloudflare switches donatelli.tech to the previous successful production deployment. main keeps the newer
-              commit, so the next publish or redeploy puts it back.
+              Cloudflare switches donatelli.tech to the newest production deployment of an older commit than the one
+              live now. main keeps the newer commit, so the next publish or redeploy puts it back.
             </p>
             <SwitchField
               id="rollback-dry"
