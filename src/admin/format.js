@@ -126,7 +126,18 @@ function countCsvRecords(text) {
   return Math.max(0, records - 1);
 }
 
+// A visitor's email is stored as typed, and '?', '&' and '=' are legal in it, so a plain
+// 'mailto:' + email would let it add cc, bcc, subject or body fields (RFC 6068) to the owner's
+// reply. Encoding both sides of the last '@' keeps the whole value as the one recipient.
+function mailtoHref(email) {
+  var text = String(email || '');
+  var at = text.lastIndexOf('@');
+  if (at < 0) return 'mailto:' + encodeURIComponent(text);
+  return 'mailto:' + encodeURIComponent(text.slice(0, at)) + '@' + encodeURIComponent(text.slice(at + 1));
+}
+
 module.exports = {
+  mailtoHref: mailtoHref,
   setTimeZone: setTimeZone,
   parseDate: parseDate,
   formatTime: formatTime,

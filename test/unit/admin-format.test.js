@@ -95,3 +95,16 @@ test('setTimeZone ignores a zone the browser does not know, and null returns to 
   const local = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' }).format(new Date('2026-09-30T16:12:00Z')).replace(/[\u202f\u00a0]/g, ' ');
   assert.equal(f.formatTime('2026-09-30T16:12:00Z'), local);
 });
+
+test('mailtoHref keeps a crafted address as one recipient with no header fields', () => {
+  const href = f.mailtoHref('lead@acme-corp.com?cc=collect%40evil.example&subject=Re%3A%20invoice&body=hi');
+  assert.equal(href, 'mailto:lead@acme-corp.com%3Fcc%3Dcollect%2540evil.example%26subject%3DRe%253A%2520invoice%26body%3Dhi');
+  const url = new URL(href);
+  assert.equal(url.search, '');
+  assert.equal(url.hash, '');
+  assert.equal(f.mailtoHref('a@b.com?cc=x%40y.z'), 'mailto:a@b.com%3Fcc%3Dx%2540y.z');
+  assert.equal(f.mailtoHref('x@evil?bcc=a@b.com'), 'mailto:x%40evil%3Fbcc%3Da@b.com');
+  // Ordinary addresses keep their form; '+' is encoded and decodes back to the same address
+  assert.equal(f.mailtoHref('visitor.one@example.com'), 'mailto:visitor.one@example.com');
+  assert.equal(f.mailtoHref('o+tag@example.ie'), 'mailto:o%2Btag@example.ie');
+});

@@ -8,7 +8,7 @@ import Icon, { Download, Trash2 } from '../ui/Icon';
 import ConnectionRows, { StatusBadge } from './ConnectionRows';
 import { Metrics } from './HomeView';
 import useMedia from '../hooks/useMedia';
-import { countCsvRecords, formatDateTime, formatTime, pluralize } from '../format';
+import { countCsvRecords, formatDateTime, formatTime, mailtoHref, pluralize } from '../format';
 
 const FILTERS = [
   ['all', 'All'],
@@ -37,7 +37,7 @@ function ConnectionsTable({ items }) {
             <tr key={c.id}>
               <td className="mono">{formatDateTime(c.receivedAt)}</td>
               <td><Link to={'/admin/connections/' + c.id}>{c.name}</Link></td>
-              <td><a href={'mailto:' + c.email}>{c.email}</a></td>
+              <td><a href={mailtoHref(c.email)}>{c.email}</a></td>
               <td>{c.company || ''}</td>
               <td className="mono">{c.source}</td>
               <td><StatusBadge status={c.status} /></td>

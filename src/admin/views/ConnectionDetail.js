@@ -5,7 +5,7 @@ import Button, { ButtonLink } from '../ui/Button';
 import Dialog from '../ui/Dialog';
 import { SelectField, TextAreaField } from '../ui/Field';
 import Icon, { ArrowLeft, Download, Mail, Trash2 } from '../ui/Icon';
-import { formatDate, formatDateTime, formatTime, parseDate } from '../format';
+import { formatDate, formatDateTime, formatTime, mailtoHref, parseDate } from '../format';
 
 const STATUS_OPTIONS = [
   { value: 'new', label: 'New' },
@@ -127,7 +127,7 @@ export default function ConnectionDetail({ api, id: idProp }) {
       <div className="section">
         <dl className="dl">
           <Row label="Name">{c.name}</Row>
-          <Row label="Email"><a href={'mailto:' + c.email}>{c.email}</a></Row>
+          <Row label="Email"><a href={mailtoHref(c.email)}>{c.email}</a></Row>
           <Row label="Company">{c.company || <span className="muted">Not given</span>}</Row>
           <Row label="Note">{c.note || <span className="muted">Not given</span>}</Row>
           <Row label="Source"><span className="mono">{c.source}</span></Row>
@@ -143,7 +143,7 @@ export default function ConnectionDetail({ api, id: idProp }) {
           </Row>
         </dl>
         <div className="cluster">
-          <a className="btn btn-secondary" href={'mailto:' + c.email}>
+          <a className="btn btn-secondary" href={mailtoHref(c.email)}>
             <Icon as={Mail} size={16} /> Email
           </a>
           <Button variant="secondary" icon={Download} onClick={saveVcard}>Save to contacts</Button>
