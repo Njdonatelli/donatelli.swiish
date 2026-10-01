@@ -365,8 +365,9 @@ Success: `added … packages` with no `npm error` lines.
 cp .env.example .env && sed -i.bak "s|^JWT_SECRET=\$|JWT_SECRET=$(openssl rand -base64 48)|" .env && rm .env.bak
 ```
 
-Success: no output. With `NODE_ENV` empty the server runs in development mode: no setup token,
-cookies over plain http, `http://localhost:3000` as the origin.
+Success: no output. With `NODE_ENV` empty the server runs in development mode: no setup token
+(the setup page leaves that field out), cookies over plain http, `http://localhost:3000` as the
+origin.
 
 ```bash
 npm run dev

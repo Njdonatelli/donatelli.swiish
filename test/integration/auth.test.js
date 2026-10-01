@@ -73,6 +73,7 @@ describe('boot', () => {
       const client = clientFor(srv);
       assert.equal((await client.get('/api/health')).status, 200);
       // Development needs no setup token, and its cookies work over plain http
+      assert.equal((await client.get('/api/setup/status')).json.setupTokenRequired, false, 'so the setup form leaves the field out');
       const res = await client.setupOwner({ email: OWNER, password: 'dev password 123' });
       assert.equal(res.status, 200, res.text);
       assert.doesNotMatch(authCookie(res), /Secure/);
@@ -122,6 +123,7 @@ describe('a production server', () => {
     assert.equal(res.status, 200);
     assert.equal(res.json.setupComplete, false);
     assert.equal(res.json.mailConfigured, false);
+    assert.equal(res.json.setupTokenRequired, true);
   });
 
   test('setup needs the SETUP_TOKEN, a 12-character password, and runs once', async () => {

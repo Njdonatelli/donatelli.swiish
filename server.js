@@ -1148,7 +1148,10 @@ app.get('/api/setup/status', apiLimiter, (req, res, next) => {
       setupComplete: row.count > 0,
       userCount: row.count,
       demoMode: false,
-      mailConfigured: config.mailConfigured
+      mailConfigured: config.mailConfigured,
+      // Development with no SETUP_TOKEN skips the check (requireSetupToken), so the form can leave the
+      // field out; production always needs it, so this reveals nothing there.
+      setupTokenRequired: config.isProd || Boolean(config.setupToken)
     });
   });
 });

@@ -13,6 +13,9 @@ export default function SetupView({ api }) {
   const [passwordError, setPasswordError] = useState('');
   const [busy, setBusy] = useState(false);
   const set = (key) => (e) => setForm({ ...form, [key]: e.target.value });
+  // Only an explicit false from the server hides the field; a failed status read keeps it, and the server
+  // checks the token either way.
+  const tokenRequired = !(session.setup && session.setup.setupTokenRequired === false);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -41,16 +44,21 @@ export default function SetupView({ api }) {
 
   return (
     <AuthFrame title="Set up the admin.">
-      <p className="small muted">This creates the one owner account. The setup token is the <code>SETUP_TOKEN</code> value on the admin server.</p>
+      <p className="small muted">
+        This creates the one owner account.
+        {tokenRequired ? <> The setup token is the <code>SETUP_TOKEN</code> value on the admin server.</> : ' Development mode: no setup token is needed.'}
+      </p>
       <form className="stack" onSubmit={submit}>
-        <PasswordField
-          id="setup-token"
-          label="Setup token"
-          autoComplete="off"
-          required
-          value={form.setupToken}
-          onChange={set('setupToken')}
-        />
+        {tokenRequired ? (
+          <PasswordField
+            id="setup-token"
+            label="Setup token"
+            autoComplete="off"
+            required
+            value={form.setupToken}
+            onChange={set('setupToken')}
+          />
+        ) : null}
         <TextField
           id="setup-org"
           label="Organisation name"
