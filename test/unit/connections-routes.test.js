@@ -721,6 +721,20 @@ describe('retention purge', () => {
     assert.equal((await ctx.audit('connections_purged')).length, 1, 'nothing purged, nothing audited');
   });
 
+  test('purgeExpired clears ip_hash once the 15-minute window has passed, without counting or auditing it', async () => {
+    for (let i = 0; i < 5; i += 1) assert.equal((await ctx.ingest(visitor(`h-${i}`, { ipHash: hash16('h') }))).status, 201);
+    assert.equal((await ctx.ingest(visitor('fresh', { ipHash: hash16('fresh') }))).status, 201);
+    await ctx.dbRun("UPDATE connections SET received_at = datetime(CURRENT_TIMESTAMP, '-16 minutes') WHERE email = 'visitorh-0@example.com'");
+
+    assert.equal(await ctx.handle.purgeExpired(), 0);
+    assert.equal((await ctx.dbGet("SELECT ip_hash FROM connections WHERE email = 'visitorh-0@example.com'")).ip_hash, null);
+    assert.equal((await ctx.dbGet("SELECT ip_hash FROM connections WHERE email = 'visitorfresh@example.com'")).ip_hash, hash16('fresh'));
+    assert.equal((await ctx.audit('connections_purged')).length, 0);
+    // The four rows still inside the window keep counting toward the visitor's limit.
+    assert.equal((await ctx.ingest(visitor('h-5', { ipHash: hash16('h') }))).status, 201);
+    assert.equal((await ctx.ingest(visitor('h-6', { ipHash: hash16('h') }))).status, 429);
+  });
+
   test('startTimers purges at once; stopTimers is safe to call twice', async () => {
     assert.equal((await ctx.ingest(visitor(1))).status, 201);
     await ctx.dbRun("UPDATE connections SET expires_at = datetime(CURRENT_TIMESTAMP, '-1 second')");
