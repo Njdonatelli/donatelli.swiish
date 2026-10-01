@@ -26,7 +26,7 @@ test('today\'s site.json already agrees with the registry: the text comes back u
 
 test('only the derived values and their dates change', () => {
   const site = siteWith((s) => {
-    s.contactEmail = 'owner@example.com';
+    s.contactEmail = 'nick@donatelli.tech';
     s.owner.city = 'Carlsbad';
     s.owner.givenName = 'Nicolas';
     s.owner.name = 'Nicolas Donatelli';
@@ -39,7 +39,7 @@ test('only the derived values and their dates change', () => {
   const after = JSON.parse(text);
   assert.equal(after.entries.owner_name.value, 'Nicolas Donatelli');
   assert.equal(after.entries.owner_location.value, 'Carlsbad, California');
-  assert.equal(after.entries.contact_email.value, 'owner@example.com');
+  assert.equal(after.entries.contact_email.value, 'nick@donatelli.tech');
   assert.equal(after.entries.owner_linkedin.value, 'https://linkedin.com/in/example');
   for (const key of changedKeys) {
     assert.equal(after.entries[key].date, TODAY, key);
@@ -65,9 +65,48 @@ test('a change to one fact touches only that entry', () => {
   assert.deepEqual(changedLines, ['      "value": "San Marcos, Calif.",', `      "date": "${TODAY}",`]);
 });
 
-test('no LinkedIn link on the card leaves the LinkedIn entry as it is', () => {
-  const { changedKeys } = syncCredentials(TEXT, siteWith((s) => { s.ownerSameAs = ['https://github.com/Njdonatelli']; }), TODAY);
-  assert.deepEqual(changedKeys, []);
+// R3 fails while the registry names a LinkedIn URL the card does not list, and only git can edit the
+// registry, so removing the profile from the card must clear it in the same commit.
+test('no LinkedIn profile link on the card clears the LinkedIn entry; its status stays', () => {
+  for (const ownerSameAs of [['https://github.com/Njdonatelli'], ['https://www.linkedin.com/company/example'], []]) {
+    const { text, changedKeys } = syncCredentials(TEXT, siteWith((s) => { s.ownerSameAs = ownerSameAs; }), TODAY);
+    assert.deepEqual(changedKeys, ['owner_linkedin'], JSON.stringify(ownerSameAs));
+    const entry = JSON.parse(text).entries.owner_linkedin;
+    assert.equal(entry.value, null);
+    assert.equal(entry.date, TODAY);
+    assert.equal(entry.status, 'verified');
+  }
+});
+
+test('a LinkedIn profile on a country host or in another letter case is still the profile', () => {
+  for (const url of ['https://ca.linkedin.com/in/nick-donatelli/', 'https://www.LinkedIn.com/in/nick-donatelli/']) {
+    const { text } = syncCredentials(TEXT, siteWith((s) => { s.ownerSameAs = [url]; }), TODAY);
+    assert.equal(JSON.parse(text).entries.owner_linkedin.value, url);
+  }
+});
+
+test('a registry LinkedIn value the card still lists is kept when no other profile link matches', () => {
+  const trimmed = JSON.parse(TEXT);
+  trimmed.entries.owner_linkedin.value = 'https://linkedin.example/in/nick';
+  const text = JSON.stringify(trimmed, null, 2) + '\n';
+  const out = syncCredentials(text, siteWith((s) => { s.ownerSameAs = ['https://linkedin.example/in/nick']; }), TODAY);
+  assert.deepEqual(out, { text, changedKeys: [] });
+});
+
+// The contact entry's check reads "Domain matches the site", which an address elsewhere cannot meet.
+test('a public email off the site domain is synced but shows as pending, keeping its last confirmed date', () => {
+  const { text, changedKeys } = syncCredentials(TEXT, siteWith((s) => { s.contactEmail = 'nick.donatelli@gmail.com'; }), TODAY);
+  assert.deepEqual(changedKeys, ['contact_email']);
+  const before = JSON.parse(TEXT).entries.contact_email;
+  const entry = JSON.parse(text).entries.contact_email;
+  assert.equal(entry.value, 'nick.donatelli@gmail.com');
+  assert.equal(entry.status, 'pending');
+  assert.equal(entry.date, before.date);
+  for (const field of ['verify', 'note', 'label', 'group']) assert.equal(entry[field], before[field], field);
+
+  const onDomain = syncCredentials(TEXT, siteWith((s) => { s.contactEmail = 'Nick@Donatelli.tech'; }), TODAY);
+  assert.equal(JSON.parse(onDomain.text).entries.contact_email.status, 'verified');
+  assert.equal(JSON.parse(onDomain.text).entries.contact_email.date, TODAY);
 });
 
 test('the first LinkedIn profile link wins; other links are ignored', () => {
@@ -91,4 +130,27 @@ test('an entry the registry does not have is not created', () => {
   const text = JSON.stringify(trimmed, null, 2) + '\n';
   const out = syncCredentials(text, siteWith((s) => { s.ownerSameAs = ['https://www.linkedin.com/in/example/']; }), TODAY);
   assert.deepEqual(out, { text, changedKeys: [] });
+});
+
+// The website checkout, when this machine has one: WEBSITE_DIR, a sibling of this repo, or the path the spec names.
+const WEBSITE = [process.env.WEBSITE_DIR, path.join(__dirname, '..', '..', '..', 'donatelli-website'), '/home/user/donatelli-website']
+  .filter(Boolean)
+  .find((dir) => fs.existsSync(path.join(dir, 'tools', 'site-schema.mjs')));
+
+// What the admin commits must pass the build's R3, or every preview of the edit fails at "Build site".
+test('sync: every profile-link edit leaves a registry the website build accepts', { skip: WEBSITE ? false : 'no donatelli-website engine on this machine' }, async () => {
+  const web = await import(path.join(WEBSITE, 'tools', 'site-schema.mjs'));
+  const edits = [
+    ['LinkedIn removed', ['https://github.com/Njdonatelli']],
+    ['a company page instead', ['https://www.linkedin.com/company/example', 'https://github.com/Njdonatelli']],
+    ['a country host', ['https://ca.linkedin.com/in/nick-donatelli/']],
+    ['an upper-case host', ['https://www.LinkedIn.com/in/nick-donatelli/']],
+    ['no profile links at all', []],
+    ['another profile', ['https://www.linkedin.com/in/someone-else/']],
+  ];
+  for (const [name, ownerSameAs] of edits) {
+    const site = siteWith((s) => { s.ownerSameAs = ownerSameAs; s.contactEmail = 'nick.donatelli@gmail.com'; });
+    const { text } = syncCredentials(TEXT, site, TODAY);
+    assert.deepEqual(web.credentialsErrors(site, JSON.parse(text)), [], name);
+  }
 });

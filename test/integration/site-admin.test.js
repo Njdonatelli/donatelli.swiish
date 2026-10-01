@@ -309,7 +309,9 @@ describe('website tools against the mock GitHub', () => {
     assert.equal(mock.fileAt(p1, 'data/site.json'), JSON.stringify(config, null, 2) + '\n');
     const creds = JSON.parse(mock.fileAt(p1, 'outputs/data/credentials.json'));
     assert.equal(creds.entries.contact_email.value, 'owner@example.com');
-    assert.equal(creds.entries.contact_email.date, todayInLA());
+    // Off the site's domain, the entry cannot show "Verified" next to "Domain matches the site"
+    assert.equal(creds.entries.contact_email.status, 'pending');
+    assert.equal(creds.entries.contact_email.date, '2026-09-14');
     assert.equal(creds.entries.owner_name.date, '2026-09-14', 'unchanged entries keep their dates');
     // Every other file in the repo is carried over from main's tree
     assert.equal(mock.fileAt(p1, 'data/site.schema.json'), mock.fileAt(seedSha, 'data/site.schema.json'));
@@ -773,6 +775,9 @@ describe('the draft across devices, restores and upstream commits', () => {
     const next = await owner.post('/api/admin/site/preview', { config: after.config, baseSha: after.baseSha, rev: after.rev });
     assert.equal(next.status, 202, next.text);
     assert.deepEqual(next.json.changes.map((c) => c.path), ['owner.city'], 'no false STALE, only the newer edit');
+    const creds = JSON.parse(mock.fileAt(next.json.commitSha, 'outputs/data/credentials.json'));
+    assert.equal(creds.entries.owner_location.value, 'Carlsbad, California');
+    assert.equal(creds.entries.owner_location.date, todayInLA());
     await publishGreen(next.json.commitSha);
     assert.equal(await getDraft(), null, 'publishing the draft its preview was built from drops it');
   });
