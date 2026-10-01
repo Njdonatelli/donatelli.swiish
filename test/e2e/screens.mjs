@@ -2,8 +2,11 @@
 // admin, and the admin's card, connections, website and account tools against a mock GitHub. Every flow the
 // owner has is driven through the real UI and screenshotted.
 //
-// Run (Bash/Zsh), from the swiish repo root, after `CI=true npm run build`:
-//   NODE_PATH=/opt/node22/lib/node_modules PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node test/e2e/screens.mjs
+// Run (Bash/Zsh), from the swiish repo root. On a clean machine (playwright is a pinned devDependency; its
+// browser is a separate download):
+//   npm ci && npx playwright install chromium && CI=true npm run build && npm run test:e2e
+// Where Chromium for Playwright 1.56 is already provisioned, point at it instead of downloading:
+//   PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers npm run test:e2e
 // Success: every screen and check prints "ok", the last line is "e2e: N screens and checks, no problems",
 // exit code 0. Screenshots and results.json land in test/e2e/out/ (git-ignored).
 //
@@ -24,8 +27,13 @@ import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const require = createRequire(import.meta.url);
-// NODE_PATH reaches CommonJS resolution only, which is how the global Playwright install is found.
-const { chromium } = require('playwright');
+let chromium;
+try {
+  ({ chromium } = require('playwright'));
+} catch (err) {
+  console.error(`e2e not run: Playwright is not installed (${err.code || err.message}). Run npm ci, then npx playwright install chromium.`);
+  process.exit(1);
+}
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const OUT = path.join(ROOT, 'test', 'e2e', 'out');

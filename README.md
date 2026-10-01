@@ -32,6 +32,15 @@ npm ci && npm test
 
 Success: `npm ci` prints `added … packages`, and the test summary ends with `# fail 0`.
 
+The end-to-end run drives every screen in a real browser. It needs a `donatelli-website` checkout beside this
+repository (or `E2E_WEBSITE_DIR`) and Playwright's Chromium:
+
+```bash
+npx playwright install chromium && CI=true npm run build && npm run test:e2e
+```
+
+Success: the last line reads `e2e: N screens and checks, no problems`.
+
 ---
 
 # Swiish
