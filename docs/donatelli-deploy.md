@@ -222,11 +222,27 @@ What the owner must know:
 
 - **Deleted connections live on in backups** until those files rotate out: up to
   `BACKUP_KEEP` × `BACKUP_INTERVAL_HOURS` (14 days with the values above). An erase request is
-  complete on the live database at once and in the backups after that period.
+  complete on the live database at once (deleted rows are overwritten in the file, not only
+  unlinked) and in the backups after that period. Restoring a backup brings them back into the
+  live database until they are erased again (see "Restore the newest backup").
 - **Backups stay on this host.** Copying them off the host, encrypted and on a schedule you
   control, is your choice and is not set up here.
 
 ### Restore the newest backup
+
+A restore puts the whole database back as it was at the backup. Everything done after it is undone: connections
+received, but also connections deleted or erased by email, password changes, and "Sign out everywhere". Erased
+details come back, a changed password goes back to the old one, and sessions that were signed out work again.
+
+Before you restore, see when the backup was taken (its file name is the UTC time):
+
+```bash
+docker compose run --rm --no-deps swiish sh -c 'ls -1 data/backups | tail -n 1'
+```
+
+Expected output: `cards-<UTC time>.db`. Write down every connection you erased or deleted after that time, and
+whether you changed the password or used "Sign out everywhere" after it. The audit log never stores an erased
+email, so your own note is the only record of what to erase again.
 
 Bash on the host, in the repository directory. The copy runs in a one-off container because
 the files in `./data` belong to the container's root user. The current database is kept as
@@ -236,8 +252,38 @@ the files in `./data` belong to the container's root user. The current database 
 docker compose stop swiish && docker compose run --rm --no-deps swiish sh -c 'cp data/cards.db data/cards.db.before-restore && cp "data/backups/$(ls -1 data/backups | tail -n 1)" data/cards.db' && docker compose start swiish
 ```
 
-Success: the output ends with `Container swiish Started`. Anything recorded after that backup
-is gone from the live database; if the admin shows the login page, log in again.
+Success: the output ends with `Container swiish Started`.
+
+Then, in this order:
+
+1. Sign every session out by rotating the session key. Print a new value:
+
+   ```bash
+   openssl rand -base64 48
+   ```
+
+   Expected output: one 64-character line. Set it as `JWT_SECRET` in `.env` (`nano .env`), then restart with the
+   new environment (`start` does not re-read `.env`):
+
+   ```bash
+   docker compose up -d
+   ```
+
+   Success: `Container swiish Started`, and the admin shows the login page. "Sign out everywhere" or
+   `set-password.js` is not enough here: each moves the restored session counter on by one, and sessions created
+   after the original sign-out would work again.
+2. If you changed the password after the backup, change it again (Account → Password, or "Password reset without
+   email" below).
+3. In Admin → Connections, erase or delete again every connection on your list.
+4. Once the restored data is right and nothing more is needed from the old file, delete the pre-restore copy. It
+   holds every connection, including erased ones, and the backup rotation never removes it:
+
+   ```bash
+   docker compose run --rm --no-deps swiish sh -c 'rm data/cards.db.before-restore && echo Removed data/cards.db.before-restore'
+   ```
+
+   Expected output: `Removed data/cards.db.before-restore`. Do not move it into `data/backups/` instead: a
+   `cards-<time>.db` name would sort as the newest backup, and the next restore would pick it.
 
 ## Recovery
 
